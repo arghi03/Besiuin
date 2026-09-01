@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Urbanist:ital,wght@0,100..900;1,100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Fonts */
+  --font-sans: 'Urbanist', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+
+  /* Brand Theme Colors */
+  --color-brand-maroon: #7A1C1C;
+  --color-brand-maroon-hover: #601414;
+  --color-brand-maroon-light: #FBEBEB;
+  
+  --color-brand-navy: #1B2A47;
+  --color-brand-navy-hover: #121E33;
+  --color-brand-navy-light: #E8EEF9;
+  
+  --color-brand-light: #F8F9FA;
+  --color-brand-gray: #E9ECEF;
+  --color-brand-dark: #0D1420;
+}
