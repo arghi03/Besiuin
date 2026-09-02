@@ -23,6 +23,7 @@ export default function GachaPage({ onBack, userRole }) {
   const [numGroups, setNumGroups] = useState(3)
   const [shuffledGroups, setShuffledGroups] = useState([])
   const [isShuffling, setIsShuffling] = useState(false)
+  const [copiedWA, setCopiedWA] = useState(false)
 
   // Fetch all pools on mount
   useEffect(() => {
@@ -48,24 +49,22 @@ export default function GachaPage({ onBack, userRole }) {
           const mockData = [
             {
               id: 1,
-              nama_tema: "Pembagian Kelompok Proyek Web",
-              tipe: "kelompok",
-              list_item: ["Ahmad", "Bayu", "Citra", "Dedi", "Elsa", "Fajar", "Gita", "Hana", "Irfan", "Joko"],
-              created_at: new Date().toISOString()
+              nama_pool: "Mahasiswa Kelas B",
+              tipe_pool: "anggota_kelas",
+              list_item: [
+                "Arghi Vianuri", "Rajif", "Pais", "Rapi", "Diki", 
+                "Fajar", "Ahmad", "Budi", "Cantika", "Dino", 
+                "Erwan", "Fiona", "Gilang", "Hana", "Indra"
+              ]
             },
             {
               id: 2,
-              nama_tema: "Piket Harian Hari Senin",
-              tipe: "piket",
-              list_item: ["Citra", "Dedi", "Fajar", "Joko"],
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 3,
-              nama_tema: "Siapa Maju Presentasi Pertama?",
-              tipe: "umum",
-              list_item: ["Elsa", "Gita", "Hana", "Irfan"],
-              created_at: new Date().toISOString()
+              nama_pool: "Topik Presentasi Web",
+              tipe_pool: "topik_tugas",
+              list_item: [
+                "React State Management", "Supabase Auth & RLS", 
+                "Tailwind CSS v4", "REST vs GraphQL", "PWA & Service Worker"
+              ]
             }
           ]
           setPools(mockData)
@@ -80,28 +79,28 @@ export default function GachaPage({ onBack, userRole }) {
         }
       }
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal memuat gacha pools: ${err.message}` })
+      console.error('Error fetching pools:', err)
+      setStatusMessage({ type: 'error', text: `Gagal memuat tema gacha: ${err.message}` })
     } finally {
       setLoading(false)
     }
   }
 
-  // Create pool in database
+  // Create new pool
   const handleCreatePool = async (e) => {
     e.preventDefault()
     if (!newTema.trim() || !newItemsText.trim()) {
-      setStatusMessage({ type: 'error', text: 'Nama Tema dan List Item wajib diisi!' })
+      setStatusMessage({ type: 'error', text: 'Nama tema dan daftar item wajib diisi!' })
       return
     }
 
-    // Parse comma separated items into a clean JSON array
     const items = newItemsText
-      .split(',')
-      .map(item => item.trim())
-      .filter(item => item.length > 0)
+      .split('\n')
+      .map(i => i.trim())
+      .filter(i => i.length > 0)
 
-    if (items.length < 2) {
-      setStatusMessage({ type: 'error', text: 'Masukkan minimal 2 item untuk di-gacha.' })
+    if (items.length === 0) {
+      setStatusMessage({ type: 'error', text: 'Daftar item tidak boleh kosong!' })
       return
     }
 
@@ -109,60 +108,61 @@ export default function GachaPage({ onBack, userRole }) {
       setCreating(true)
       setStatusMessage(null)
 
-      const newPool = {
-        nama_tema: newTema.trim(),
-        tipe: newTipe,
-        list_item: items // Will be stored as jsonb
+      const payload = {
+        nama_pool: newTema.trim(),
+        tipe_pool: newTipe,
+        list_item: items
       }
 
       const { data, error } = await supabase
         .from('gacha_pools')
-        .insert([newPool])
+        .insert([payload])
         .select()
 
       if (error) {
         if (error.code === '42P01') {
-          // Simulate local creation
+          // Local fallback
           const mockNew = {
             id: Date.now(),
-            ...newPool,
-            created_at: new Date().toISOString()
+            ...payload
           }
           setPools(prev => [mockNew, ...prev])
           setSelectedPool(mockNew)
           setStatusMessage({
             type: 'warning',
-            text: 'Tema gacha baru ditambahkan ke preview lokal (Tabel "gacha_pools" belum ada).'
+            text: 'Tema gacha ditambahkan ke preview lokal (Tabel "gacha_pools" belum dibuat).'
           })
         } else {
           throw error
         }
       } else {
-        setStatusMessage({ type: 'success', text: 'Tema gacha berhasil dibuat!' })
+        setStatusMessage({ type: 'success', text: 'Tema gacha berhasil ditambahkan!' })
         await fetchPools()
+        if (data && data.length > 0) {
+          setSelectedPool(data[0])
+        }
       }
 
       // Reset form
       setNewTema('')
       setNewItemsText('')
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal membuat: ${err.message}` })
+      setStatusMessage({ type: 'error', text: `Gagal menambahkan tema gacha: ${err.message}` })
     } finally {
       setCreating(false)
     }
   }
 
-  // Draw 1 random winner (Gacha Single)
+  // Draw 1 single random winner
   const drawSingleWinner = () => {
     if (!selectedPool || !selectedPool.list_item || selectedPool.list_item.length === 0) return
 
     setRolling(true)
     setRollerResult(null)
     setShuffledGroups([])
-    let counter = 0
-    const items = selectedPool.list_item
 
-    // Sound-like interval effect for visual speed
+    const items = selectedPool.list_item
+    let counter = 0
     const interval = setInterval(() => {
       const randomIndex = Math.floor(Math.random() * items.length)
       setRollerText(items[randomIndex])
@@ -189,6 +189,7 @@ export default function GachaPage({ onBack, userRole }) {
     setIsShuffling(true)
     setRollerResult(null)
     setShuffledGroups([])
+    setCopiedWA(false)
 
     setTimeout(() => {
       // Fisher-Yates Shuffle
@@ -210,6 +211,35 @@ export default function GachaPage({ onBack, userRole }) {
       setShuffledGroups(groups)
       setIsShuffling(false)
     }, 1000)
+  }
+
+  // Handle WhatsApp format copy for shuffled groups
+  const handleCopyWAFormat = () => {
+    if (!shuffledGroups || shuffledGroups.length === 0) return
+
+    let text = `*HASIL PEMBAGIAN KELOMPOK*\n`
+    if (selectedPool?.nama_pool) {
+      text += `📌 *Tema:* ${selectedPool.nama_pool}\n`
+    }
+    text += `👥 *Total Kelompok:* ${shuffledGroups.length}\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`
+
+    shuffledGroups.forEach((group, idx) => {
+      text += `*KELOMPOK ${idx + 1}*\n`
+      group.forEach((member, mIdx) => {
+        text += `${mIdx + 1}. ${member}\n`
+      })
+      text += `\n`
+    })
+
+    text += `━━━━━━━━━━━━━━━━━━━━━\n`
+    text += `_Diacak secara adil & otomatis via Besiuin Space_`
+
+    navigator.clipboard.writeText(text)
+    setCopiedWA(true)
+    setTimeout(() => {
+      setCopiedWA(false)
+    }, 2500)
   }
 
   return (
@@ -418,18 +448,47 @@ export default function GachaPage({ onBack, userRole }) {
 
                 {/* 3. Shuffle Groups Results Screen */}
                 {!isShuffling && shuffledGroups.length > 0 && (
-                  <div className="w-full space-y-6 animate-fade-in">
-                    <h4 className="text-sm font-bold text-center text-slate-300">Hasil Pembagian Kelompok</h4>
+                  <div className="w-full space-y-4 animate-fade-in">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/5 border border-white/10 rounded-2xl p-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <span>🎉</span> Hasil Pembagian ({shuffledGroups.length} Kelompok)
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          {selectedPool ? (selectedPool.nama_pool || selectedPool.nama_tema) : 'Kelompok'} telah selesai diacak secara merata.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyWAFormat}
+                        className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-95 ${
+                          copiedWA
+                            ? 'bg-emerald-600 text-white border border-emerald-500 shadow-emerald-950/40'
+                            : 'bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/50 hover:border-emerald-500'
+                        }`}
+                        title="Salin semua daftar kelompok untuk WhatsApp"
+                      >
+                        <span>{copiedWA ? '✓' : '📋'}</span>
+                        {copiedWA ? 'Format WA Tersalin!' : 'Salin Format WA'}
+                      </button>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       {shuffledGroups.map((group, groupIdx) => (
-                        <div key={groupIdx} className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2.5">
-                          <h5 className="font-bold text-xs uppercase text-brand-maroon-light border-b border-white/5 pb-1.5">
-                            Kelompok {groupIdx + 1}
-                          </h5>
+                        <div key={groupIdx} className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2.5 hover:border-brand-maroon/30 transition-colors">
+                          <div className="flex items-center justify-between border-b border-white/5 pb-1.5">
+                            <h5 className="font-bold text-xs uppercase text-brand-maroon-light">
+                              Kelompok {groupIdx + 1}
+                            </h5>
+                            <span className="text-[10px] font-mono text-slate-500">
+                              {group.length} Orang
+                            </span>
+                          </div>
                           <ul className="space-y-1.5">
                             {group.map((item, itemIdx) => (
                               <li key={itemIdx} className="text-xs text-slate-200 bg-brand-dark/40 px-2 py-1 rounded border border-white/5 flex items-center gap-1.5 truncate">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-brand-maroon"></span>
                                 {item}
                               </li>
                             ))}

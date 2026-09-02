@@ -1036,23 +1036,40 @@ export default function Dashboard({ onNavigate, userRole }) {
               </span>
             </div>
 
-            {/* Card 4: Kelompok Tugas (Active) */}
+            {/* Card 4: Kelompok Tugas (Freeze / Coming Soon) */}
             <div
               onClick={() => onNavigate('groups')}
-              className="bg-gradient-to-br from-brand-maroon/20 to-brand-navy/20 border border-white/10 rounded-2xl p-6 hover:border-brand-maroon/60 hover:scale-[1.03] active:scale-[0.98] transition-all cursor-pointer group flex flex-col justify-between min-h-[180px] shadow-lg hover:shadow-brand-maroon/10"
+              className="bg-gradient-to-br from-brand-maroon/10 to-brand-navy/10 border border-white/5 rounded-2xl p-6 hover:border-amber-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer group flex flex-col justify-between min-h-[180px] shadow-lg relative overflow-hidden"
             >
               <div className="space-y-3">
-                <div className="w-12 h-12 rounded-xl bg-brand-maroon/20 flex items-center justify-center text-xl text-brand-maroon-light group-hover:bg-brand-maroon/30 transition-colors">
-                  📂
+                <div className="flex items-center justify-between">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-xl text-slate-400 group-hover:bg-amber-500/10 group-hover:text-amber-300 transition-colors">
+                    📂
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                    ⏳ Freeze / Segera Hadir
+                  </span>
                 </div>
                 <h3 className="font-bold text-lg text-white">Kelompok Tugas</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Daftar kelompok tugas kuliah, koordinasi kelompok, dan format copy WhatsApp.
+                  Fitur rekap kelompok sedang di-freeze. Pembagian kelompok dapat dilakukan langsung di halaman <span className="text-brand-maroon-light font-bold">All-Round Gacha</span>.
                 </p>
               </div>
-              <span className="text-xs text-brand-maroon-light font-bold flex items-center gap-1 mt-4">
-                Buka Aplikasi <span>→</span>
-              </span>
+              <div className="flex items-center justify-between mt-4 pt-2 border-t border-white/5">
+                <span className="text-[11px] text-slate-500 font-mono">
+                  Gunakan Gacha Kelompok
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onNavigate('gacha')
+                  }}
+                  className="text-xs text-brand-maroon-light font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  Buka Gacha <span>→</span>
+                </button>
+              </div>
             </div>
 
             {/* Card 5: Galeri Kenangan (Active) */}

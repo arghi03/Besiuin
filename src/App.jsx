@@ -116,7 +116,11 @@ function App() {
         <GachaPage onBack={() => setCurrentPage('dashboard')} userRole={userRole} />
       )}
       {currentPage === 'groups' && (
-        <GroupsPage onBack={() => setCurrentPage('dashboard')} userRole={userRole} />
+        <GroupsPage 
+          onBack={() => setCurrentPage('dashboard')} 
+          onNavigateToGacha={() => setCurrentPage('gacha')} 
+          userRole={userRole} 
+        />
       )}
       {currentPage === 'gallery' && (
         <GalleryPage onBack={() => setCurrentPage('dashboard')} userRole={userRole} />
