@@ -12,6 +12,7 @@ export default function MembersPage({ onBack }) {
         const { data, error } = await supabase
           .from('whitelist_users')
           .select('email, username, foto_url')
+          .not('username', 'is', null)
           .order('username', { ascending: true })
 
         if (error) throw error
@@ -49,7 +50,7 @@ export default function MembersPage({ onBack }) {
               Daftar <span className="text-maroon-600">Anggota</span>
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-1">
-              Semua anggota kelas Sistem Informasi yang terdaftar di Besiuin Space.
+              Anggota kelas Sistem Informasi yang sudah mendaftar dan memiliki username di Besiuin Space.
             </p>
           </div>
           {onBack && (

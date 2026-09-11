@@ -22,11 +22,11 @@ export function saveLocalProfile(email, patch) {
   return next
 }
 
-// Ambil profil gabungan: DB dulu, timpa dengan localStorage bila ada
+// Ambil profil: DB dulu, fallback ke localStorage hanya jika DB kosong/foto tidak ada
 export async function fetchProfile(email) {
   const local = loadLocalProfile(email)
-  let username = local.username || null
-  let foto = local.foto || null
+  let username = null
+  let foto = null
 
   try {
     const { data, error } = await supabase
@@ -36,12 +36,16 @@ export async function fetchProfile(email) {
       .maybeSingle()
 
     if (!error && data) {
-      if (!username) username = data.username || null
-      if (!foto) foto = data.foto_url || null
+      username = data.username || null
+      foto = data.foto_url || null
     }
   } catch {
-    // abaikan — pakai lokal
+    // abaikan
   }
+
+  // Fallback localStorage hanya jika DB tidak punya data
+  if (!username && local.username) username = local.username
+  if (!foto && local.foto) foto = local.foto
 
   return { username, foto }
 }

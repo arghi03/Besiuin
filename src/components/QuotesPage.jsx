@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../config/supabaseClient'
 
-export default function QuotesPage() {
+export default function QuotesPage({ userRole }) {
   const [quotes, setQuotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -93,6 +93,17 @@ export default function QuotesPage() {
       alert(`Gagal menambah quote: ${err.message}`)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleDeleteQuote = async (id) => {
+    if (!confirm('Hapus quote ini?')) return
+    try {
+      const { error } = await supabase.from('quotes').delete().eq('id', id)
+      if (error) throw error
+      setQuotes(prev => prev.filter(q => q.id !== id))
+    } catch (err) {
+      alert(`Gagal menghapus quote: ${err.message}`)
     }
   }
 
@@ -196,13 +207,24 @@ export default function QuotesPage() {
                     </span>
                   </div>
 
-                  <button
-                    onClick={() => handleLike(q.id, q.likes)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 hover:border-maroon-700 text-zinc-300 hover:text-rose-300 transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-xs text-rose-400">favorite</span>
-                    <span>{q.likes || 0}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleLike(q.id, q.likes)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 hover:border-maroon-700 text-zinc-300 hover:text-rose-300 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xs text-rose-400">favorite</span>
+                      <span>{q.likes || 0}</span>
+                    </button>
+                    {(userRole === 'owner' || userRole === 'admin') && (
+                      <button
+                        onClick={() => handleDeleteQuote(q.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-maroon-950/60 border border-maroon-800/60 text-rose-300 hover:bg-maroon-900 hover:border-maroon-700 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-xs">delete</span>
+                        Hapus
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

@@ -197,6 +197,40 @@ export default function HallOfFame({ userRole }) {
     return sorted[0]
   }
 
+  const handleDeleteKategori = async (id) => {
+    if (!confirm('Hapus kategori ini beserta semua kandidat di dalamnya?')) return
+    try {
+      setStatusMessage(null)
+      // Hapus votes terkait kandidat di kategori ini
+      const { error: voteError } = await supabase.from('awards_votes').delete().in('kandidat_id', candidates.filter(c => c.kategori_id === id).map(c => c.id))
+      if (voteError) throw voteError
+      const { error } = await supabase.from('awards_kategori').delete().eq('id', id)
+      if (error) throw error
+      setCategories(prev => prev.filter(c => c.id !== id))
+      setCandidates(prev => prev.filter(c => c.kategori_id !== id))
+      setMyVotes(prev => prev.filter(v => !candidates.find(c => c.id === v.kandidat_id && c.kategori_id === id)))
+      setStatusMessage({ type: 'success', text: 'Kategori berhasil dihapus.' })
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `Gagal menghapus kategori: ${err.message}` })
+    }
+  }
+
+  const handleDeleteKandidat = async (id) => {
+    if (!confirm('Hapus kandidat ini?')) return
+    try {
+      setStatusMessage(null)
+      const { error: voteError } = await supabase.from('awards_votes').delete().eq('kandidat_id', id)
+      if (voteError) throw voteError
+      const { error } = await supabase.from('awards_kandidat').delete().eq('id', id)
+      if (error) throw error
+      setCandidates(prev => prev.filter(c => c.id !== id))
+      setMyVotes(prev => prev.filter(v => v.kandidat_id !== id))
+      setStatusMessage({ type: 'success', text: 'Kandidat berhasil dihapus.' })
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `Gagal menghapus kandidat: ${err.message}` })
+    }
+  }
+
   const tabs = [
     { id: 'vote', label: 'Vote', icon: 'how_to_vote' },
     { id: 'leaderboard', label: 'Klasemen', icon: 'emoji_events' },
@@ -289,13 +323,22 @@ export default function HallOfFame({ userRole }) {
                         <button
                           key={cat.id}
                           onClick={() => setSelectedCategoryId(cat.id)}
-                          className={`px-3 py-1.5 rounded text-xs font-mono border transition-colors cursor-pointer ${
+                          className={`px-3 py-1.5 rounded text-xs font-mono border transition-colors cursor-pointer flex items-center gap-1.5 ${
                             selectedCategoryId === cat.id
                               ? 'bg-maroon-800 border-maroon-700 text-white font-medium'
                               : 'bg-[#11141c] border-white/10 text-zinc-400 hover:text-white hover:border-white/20'
                           }`}
                         >
                           {cat.nama_kategori}
+                          {(userRole === 'owner' || userRole === 'admin') && (
+                            <span
+                              onClick={(e) => { e.stopPropagation(); handleDeleteKategori(cat.id) }}
+                              className="text-rose-400 hover:text-rose-200 ml-1 cursor-pointer"
+                              title="Hapus kategori"
+                            >
+                              <span className="material-symbols-outlined text-[11px]">delete</span>
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -309,7 +352,15 @@ export default function HallOfFame({ userRole }) {
                             <div key={candidate.id} className={`bg-[#11141c]/90 border rounded-lg overflow-hidden hover:border-white/20 transition-colors ${
                               myVote ? 'border-maroon-700/50' : 'border-white/10'
                             }`}>
-                              <div className="flex flex-col items-center gap-3 p-5">
+                              <div className="flex flex-col items-center gap-3 p-5 relative">
+                                {(userRole === 'owner' || userRole === 'admin') && (
+                                  <button
+                                    onClick={() => handleDeleteKandidat(candidate.id)}
+                                    className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded bg-maroon-950/60 border border-maroon-800/60 text-rose-300 hover:bg-maroon-900 hover:border-maroon-700 transition-colors cursor-pointer font-mono text-[10px]"
+                                  >
+                                    <span className="material-symbols-outlined text-[11px]">delete</span>
+                                  </button>
+                                )}
                                 <div className="w-20 h-20 rounded-full overflow-hidden border border-white/10">
                                   {renderFoto(candidate, 'w-full h-full')}
                                 </div>

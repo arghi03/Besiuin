@@ -3,7 +3,7 @@ import { supabase } from '../config/supabaseClient'
 import { compressImage } from '../utils/image'
 import { uploadToStorage } from '../utils/storage'
 
-export default function GalleryPage() {
+export default function GalleryPage({ onBack, userRole }) {
   const [gallery, setGallery] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusMessage, setStatusMessage] = useState(null)
@@ -141,6 +141,19 @@ export default function GalleryPage() {
   }
 
   // Filter gallery items
+  const handleDeleteGallery = async (id) => {
+    if (!confirm('Hapus momen ini?')) return
+    try {
+      setStatusMessage(null)
+      const { error } = await supabase.from('class_gallery').delete().eq('id', id)
+      if (error) throw error
+      setGallery(prev => prev.filter(g => g.id !== id))
+      setStatusMessage({ type: 'success', text: 'Momen berhasil dihapus.' })
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: `Gagal menghapus: ${err.message}` })
+    }
+  }
+
   const filteredGallery = selectedSemesterFilter === 'All'
     ? gallery
     : gallery.filter(item => item.semester.toString() === selectedSemesterFilter)
@@ -356,9 +369,20 @@ export default function GalleryPage() {
                     <div className="p-4 flex flex-col gap-1.5">
                       <h3 className="text-sm font-semibold text-white leading-snug">{item.judul_momen}</h3>
                       <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{item.deskripsi}</p>
-                      <p className="font-mono text-[10px] text-zinc-500 pt-2 border-t border-white/5 mt-1">
-                        {new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </p>
+                      <div className="flex items-center justify-between pt-2 border-t border-white/5 mt-1">
+                        <p className="font-mono text-[10px] text-zinc-500">
+                          {new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                        {(userRole === 'owner' || userRole === 'admin') && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteGallery(item.id) }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-maroon-950/60 border border-maroon-800/60 text-rose-300 hover:bg-maroon-900 hover:border-maroon-700 transition-colors cursor-pointer font-mono text-[10px]"
+                          >
+                            <span className="material-symbols-outlined text-xs">delete</span>
+                            Hapus
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </article>
                 ))}
