@@ -11,6 +11,7 @@ export default function Navbar({ currentPage, onNavigate, userRole, userName, pr
     { id: 'quotes', label: 'Quotes Wall' },
     { id: 'gacha', label: 'Gacha' },
     { id: 'gallery', label: 'Galeri' },
+    { id: 'members', label: 'Anggota' },
     { id: 'hall-of-fame', label: 'Hall of Fame' },
   ]
 

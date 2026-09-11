@@ -21,6 +21,9 @@ export default function GalleryPage() {
   // Gallery Filter State
   const [selectedSemesterFilter, setSelectedSemesterFilter] = useState('All')
 
+  // Modal State
+  const [modalItem, setModalItem] = useState(null)
+
   // Fetch gallery on mount
   useEffect(() => {
     fetchGallery()
@@ -336,7 +339,8 @@ export default function GalleryPage() {
                 {filteredGallery.map((item) => (
                   <article
                     key={item.id}
-                    className="bg-[#11141c]/90 border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition-colors group"
+                    onClick={() => setModalItem(item)}
+                    className="bg-[#11141c]/90 border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition-colors group cursor-pointer"
                   >
                     <div className="relative h-44 bg-[#0b0e14] overflow-hidden">
                       <img
@@ -365,6 +369,44 @@ export default function GalleryPage() {
         </div>
 
       </main>
+
+      {/* MODAL PREVIEW FOTO */}
+      {modalItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setModalItem(null)}
+        >
+          <div
+            className="relative bg-[#11141c] border border-white/10 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <h3 className="text-sm font-semibold text-white truncate pr-4">{modalItem.judul_momen}</h3>
+              <button
+                onClick={() => setModalItem(null)}
+                className="text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-0">
+              <img
+                src={modalItem.foto_url}
+                alt={modalItem.judul_momen}
+                className="w-full h-auto max-h-[70vh] object-contain"
+                onError={(e) => { e.target.style.display = 'none' }}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-white/10 space-y-2">
+              <p className="text-sm text-white font-medium">{modalItem.judul_momen}</p>
+              <p className="text-xs text-zinc-400 leading-relaxed">{modalItem.deskripsi}</p>
+              <p className="font-mono text-[10px] text-zinc-500">
+                Semester {modalItem.semester} • {new Date(modalItem.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="relative z-10 w-full bg-[#0b0e14]/90 border-t border-white/10 py-8 text-xs font-mono text-zinc-500 text-center">
         Besiuin Space • Galeri Kenangan Kelas Sistem Informasi

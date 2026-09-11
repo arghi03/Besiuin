@@ -8,6 +8,7 @@ import GroupsPage from './components/GroupsPage'
 import GalleryPage from './components/GalleryPage'
 import SchedulePage from './components/SchedulePage'
 import HallOfFame from './components/HallOfFame'
+import MembersPage from './components/MembersPage'
 import ResetPasswordModal from './components/ResetPasswordModal'
 import ProfileModal from './components/ProfileModal'
 import Navbar from './components/Navbar'
@@ -181,6 +182,9 @@ function App() {
       )}
       {currentPage === 'schedule' && (
         <SchedulePage onBack={() => setCurrentPage('dashboard')} userRole={userRole} />
+      )}
+      {currentPage === 'members' && (
+        <MembersPage onBack={() => setCurrentPage('dashboard')} />
       )}
       {currentPage === 'hall-of-fame' && (
         <HallOfFame onBack={() => setCurrentPage('dashboard')} userRole={userRole} />
