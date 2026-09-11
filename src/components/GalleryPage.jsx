@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { compressImage } from '../utils/image'
+import { uploadToStorage } from '../utils/storage'
 
-export default function GalleryPage({ onBack }) {
+export default function GalleryPage() {
   const [gallery, setGallery] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusMessage, setStatusMessage] = useState(null)
@@ -9,9 +11,12 @@ export default function GalleryPage({ onBack }) {
   // Gallery Form State
   const [judulMomen, setJudulMomen] = useState('')
   const [deskripsi, setDeskripsi] = useState('')
-  const [fotoUrl, setFotoUrl] = useState('')
+  const [fotoData, setFotoData] = useState(null) // data URL hasil kompresi
+  const [fotoFileName, setFotoFileName] = useState('')
+  const [processingPhoto, setProcessingPhoto] = useState(false)
   const [semester, setSemester] = useState('1')
   const [submittingGallery, setSubmittingGallery] = useState(false)
+  const fileInputRef = useRef(null)
 
   // Gallery Filter State
   const [selectedSemesterFilter, setSelectedSemesterFilter] = useState('All')
@@ -37,34 +42,7 @@ export default function GalleryPage({ onBack }) {
           type: 'warning',
           text: 'Tabel "class_gallery" belum terdeteksi di database. Menggunakan data simulasi lokal untuk preview.'
         })
-
-        // Mock gallery
-        setGallery([
-          {
-            id: 1,
-            judul_momen: "Buka Bersama Angkatan",
-            deskripsi: "Momen hangat buka bersama keluarga besar Sistem Informasi kelas B di awal ramadhan.",
-            foto_url: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&auto=format&fit=crop&q=60",
-            semester: "1",
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 2,
-            judul_momen: "Makrab Kebersamaan",
-            deskripsi: "Malam keakraban di Kaliurang untuk menjalin persaudaraan antar mahasiswa kelas B.",
-            foto_url: "https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=800&auto=format&fit=crop&q=60",
-            semester: "2",
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 3,
-            judul_momen: "Praktikum Basis Data Terakhir",
-            deskripsi: "Sesi foto bersama asisten laboratorium setelah menyelesaikan final project.",
-            foto_url: "https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&auto=format&fit=crop&q=60",
-            semester: "3",
-            created_at: new Date().toISOString()
-          }
-        ])
+        setGallery([])
       } else {
         if (galleryError) throw galleryError
         setGallery(galleryData || [])
@@ -76,11 +54,28 @@ export default function GalleryPage({ onBack }) {
     }
   }
 
+  const handlePhotoFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setProcessingPhoto(true)
+      setStatusMessage(null)
+      const dataUrl = await compressImage(file, { maxWidth: 1000, quality: 0.75 })
+      setFotoData(dataUrl)
+      setFotoFileName(file.name)
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err.message || 'Gagal memproses foto.' })
+    } finally {
+      setProcessingPhoto(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   // Create new gallery item
   const handleCreateGallery = async (e) => {
     e.preventDefault()
-    if (!judulMomen.trim() || !deskripsi.trim() || !fotoUrl.trim()) {
-      setStatusMessage({ type: 'error', text: 'Semua kolom wajib diisi!' })
+    if (!judulMomen.trim() || !deskripsi.trim() || !fotoData) {
+      setStatusMessage({ type: 'error', text: 'Judul, deskripsi, dan foto wajib diisi!' })
       return
     }
 
@@ -88,10 +83,19 @@ export default function GalleryPage({ onBack }) {
       setSubmittingGallery(true)
       setStatusMessage(null)
 
+      // Upload foto ke Supabase Storage
+      let fotoUrl = fotoData
+      try {
+        const fileName = `gallery/${Date.now()}_${(fotoFileName || 'photo').replace(/\s+/g, '_')}.jpg`
+        fotoUrl = await uploadToStorage('gallery', fotoData, fileName, 'image/jpeg')
+      } catch (uploadErr) {
+        console.warn('Storage upload gagal, fallback ke base64:', uploadErr.message)
+      }
+
       const newMoment = {
         judul_momen: judulMomen.trim(),
         deskripsi: deskripsi.trim(),
-        foto_url: fotoUrl.trim(),
+        foto_url: fotoUrl,
         semester: semester
       }
 
@@ -123,7 +127,8 @@ export default function GalleryPage({ onBack }) {
       // Reset
       setJudulMomen('')
       setDeskripsi('')
-      setFotoUrl('')
+      setFotoData(null)
+      setFotoFileName('')
       setSemester('1')
     } catch (err) {
       setStatusMessage({ type: 'error', text: `Gagal menyimpan momen: ${err.message}` })
@@ -137,236 +142,232 @@ export default function GalleryPage({ onBack }) {
     ? gallery
     : gallery.filter(item => item.semester.toString() === selectedSemesterFilter)
 
+  const labelCls = "block text-[11px] font-mono text-zinc-400 uppercase tracking-wider mb-1.5"
+  const inputCls = "w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+
   return (
-    <div className="min-h-screen bg-brand-dark text-slate-100 flex flex-col justify-between selection:bg-brand-maroon selection:text-white relative overflow-hidden font-sans">
-      {/* Background Glows */}
-      <div className="absolute top-[-10%] right-[-10%] w-[45%] h-[45%] bg-brand-navy/35 rounded-full blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-[-15%] left-[-10%] w-[45%] h-[45%] bg-brand-maroon/15 rounded-full blur-[120px] pointer-events-none"></div>
+    <div className="min-h-screen bg-[#090b0e]/60 text-zinc-200 font-sans antialiased relative">
+      <div className="fixed inset-0 bg-[#090b0e]/60 pointer-events-none z-0"></div>
 
-      {/* Header */}
-      <header className="border-b border-white/5 bg-brand-dark/60 backdrop-blur-md sticky top-0 z-50 py-4">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {onBack && (
-              <button 
-                onClick={onBack} 
-                className="mr-2 p-2 hover:bg-white/5 border border-white/10 rounded-xl transition-colors cursor-pointer text-slate-300 hover:text-white font-bold"
-              >
-                ← Hub
-              </button>
-            )}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-maroon to-red-900 flex items-center justify-center font-bold text-white text-lg shadow-lg">
-              📸
+      <main className="relative z-10 pt-24 pb-20 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-8">
+
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-xs text-zinc-300 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-maroon-700"></span>
+              <span>Arsip Visual Kelas</span>
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight leading-none text-white">Galeri Kenangan</h1>
-              <span className="text-[9px] block text-brand-maroon-light/60 font-mono tracking-widest uppercase mt-0.5">
-                Besiuin Space
-              </span>
-            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              Galeri <span className="text-maroon-600">Kenangan</span>
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-1">
+              Dokumentasi momen kebersamaan kelas Sistem Informasi.
+            </p>
           </div>
+          <span className="font-mono text-xs text-zinc-500">{filteredGallery.length} foto</span>
         </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-6 py-12 flex-grow w-full grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
-        
-        {/* Status Alert Notification */}
+        {/* Status Alert */}
         {statusMessage && (
-          <div className="lg:col-span-12 p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="text-xs">
-              <span className="font-bold text-brand-maroon-light">
-                {statusMessage.type === 'success' ? '✓ Sukses: ' : statusMessage.type === 'warning' ? '⚠ Notifikasi: ' : '✗ Kesalahan: '}
-              </span>
-              <span className="text-slate-300 leading-relaxed">{statusMessage.text}</span>
-            </div>
-            <button 
-              onClick={() => setStatusMessage(null)}
-              className="text-slate-500 hover:text-white text-xs font-bold font-mono cursor-pointer"
-            >
-              Tutup
+          <div className={`px-4 py-3 rounded border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs font-mono ${
+            statusMessage.type === 'success'
+              ? 'bg-[#10231b] border-emerald-500/30 text-emerald-300'
+              : statusMessage.type === 'warning'
+              ? 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+              : 'bg-maroon-950/60 border-maroon-800 text-rose-300'
+          }`}>
+            <span className="leading-relaxed">{statusMessage.text}</span>
+            <button onClick={() => setStatusMessage(null)} className="text-zinc-400 hover:text-white cursor-pointer shrink-0">
+              Tutup ✕
             </button>
           </div>
         )}
 
-        {/* Left Side: Create Memory Form */}
-        <section className="lg:col-span-5 space-y-6">
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-xl">
-            <div className="border-b border-white/5 pb-4 mb-6">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span className="h-5 w-1.5 rounded-full bg-brand-maroon inline-block"></span>
-                Tambah Momen Kenangan
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Bagikan momen kebersamaan kelas, dari foto makrab hingga sesi kelas seru.
-              </p>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-            <form onSubmit={handleCreateGallery} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                  Judul Momen
-                </label>
-                <input
-                  type="text"
-                  value={judulMomen}
-                  onChange={(e) => setJudulMomen(e.target.value)}
-                  placeholder="Contoh: Makrab Kebersamaan Kaliurang"
-                  className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white"
-                  required
-                />
+          {/* Form tambah momen */}
+          <section className="lg:col-span-4">
+            <div className="bg-[#11141c]/90 border border-white/10 rounded-lg p-5 lg:sticky lg:top-24">
+              <div className="mb-4 pb-3 border-b border-white/10">
+                <h2 className="text-sm font-semibold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm text-maroon-600">add_photo_alternate</span>
+                  Tambah Momen
+                </h2>
+                <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                  Bagikan momen kebersamaan kelas — langsung upload foto.
+                </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                  Pilih Semester
-                </label>
-                <select
-                  value={semester}
-                  onChange={(e) => setSemester(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white cursor-pointer"
+              <form onSubmit={handleCreateGallery} className="flex flex-col gap-3">
+                <div>
+                  <label className={labelCls}>Judul Momen</label>
+                  <input
+                    type="text"
+                    value={judulMomen}
+                    onChange={(e) => setJudulMomen(e.target.value)}
+                    placeholder="Contoh: Makrab Kebersamaan"
+                    className={inputCls}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Semester</label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className={`${inputCls} cursor-pointer`}
+                  >
+                    {['1', '2', '3', '4', '5', '6', '7', '8'].map(s => (
+                      <option key={s} value={s}>Semester {s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Upload foto langsung */}
+                <div>
+                  <label className={labelCls}>Foto Momen</label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoFile}
+                    className="hidden"
+                  />
+
+                  {fotoData ? (
+                    <div className="relative rounded border border-white/10 overflow-hidden group">
+                      <img src={fotoData} alt="Preview" className="w-full h-40 object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded bg-white/10 border border-white/20 text-white font-mono text-[10px] cursor-pointer"
+                        >
+                          Ganti
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setFotoData(null); setFotoFileName('') }}
+                          className="px-3 py-1.5 rounded bg-maroon-900/80 border border-maroon-700 text-rose-200 font-mono text-[10px] cursor-pointer"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                      <span className="absolute bottom-2 left-2 bg-[#0b0e14]/85 text-zinc-300 font-mono text-[10px] px-2 py-0.5 rounded max-w-[80%] truncate">
+                        {fotoFileName}
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={processingPhoto}
+                      className="w-full border border-dashed border-white/15 hover:border-maroon-700 rounded py-6 flex flex-col items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-2xl">
+                        {processingPhoto ? 'hourglass_top' : 'upload_file'}
+                      </span>
+                      <span className="font-mono text-[11px]">
+                        {processingPhoto ? 'Memproses foto…' : 'Klik untuk pilih foto'}
+                      </span>
+                      <span className="font-mono text-[10px] text-zinc-600">JPG / PNG, otomatis dikompresi</span>
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className={labelCls}>Deskripsi</label>
+                  <textarea
+                    value={deskripsi}
+                    onChange={(e) => setDeskripsi(e.target.value)}
+                    placeholder="Ceritakan singkat keseruan momen ini…"
+                    rows="3"
+                    className={`${inputCls} resize-none leading-relaxed`}
+                    required
+                  ></textarea>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingGallery || processingPhoto}
+                  className="w-full py-2.5 rounded bg-maroon-800 hover:bg-maroon-700 text-white font-mono text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <option value="1">Semester 1</option>
-                  <option value="2">Semester 2</option>
-                  <option value="3">Semester 3</option>
-                  <option value="4">Semester 4</option>
-                  <option value="5">Semester 5</option>
-                  <option value="6">Semester 6</option>
-                  <option value="7">Semester 7</option>
-                  <option value="8">Semester 8</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                  URL Foto / Gambar
-                </label>
-                <input
-                  type="url"
-                  value={fotoUrl}
-                  onChange={(e) => setFotoUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                  Deskripsi Momen
-                </label>
-                <textarea
-                  value={deskripsi}
-                  onChange={(e) => setDeskripsi(e.target.value)}
-                  placeholder="Tulis deskripsi singkat tentang keseruan di momen ini..."
-                  rows="3"
-                  className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none resize-none text-white"
-                  required
-                ></textarea>
-              </div>
-
-              <button
-                type="submit"
-                disabled={submittingGallery}
-                className="w-full bg-brand-maroon hover:bg-brand-maroon-hover text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50 mt-2"
-              >
-                {submittingGallery ? 'Menyimpan...' : 'Simpan Momen'}
-              </button>
-            </form>
-          </div>
-        </section>
-
-        {/* Right Side: Photo Gallery Grid */}
-        <section className="lg:col-span-7 space-y-6">
-          
-          {/* Semester Filter Bar */}
-          <div className="flex flex-col gap-4 border-b border-white/10 pb-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <span className="h-6 w-1.5 rounded-full bg-brand-maroon inline-block"></span>
-                Momen Galeri Foto
-              </h2>
-              <span className="text-xs bg-white/5 border border-white/10 text-slate-300 px-3 py-1 rounded-full font-bold">
-                {filteredGallery.length} Foto
-              </span>
+                  <span className="material-symbols-outlined text-sm">check</span>
+                  {submittingGallery ? 'Menyimpan…' : 'Simpan Momen'}
+                </button>
+              </form>
             </div>
+          </section>
 
-            <div className="flex flex-wrap gap-2">
-              {['All', '1', '2', '3', '4'].map((sem) => (
+          {/* Grid galeri */}
+          <section className="lg:col-span-8">
+
+            {/* Filter */}
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs mb-6">
+              {['All', '1', '2', '3', '4', '5'].map((sem) => (
                 <button
                   key={sem}
                   onClick={() => setSelectedSemesterFilter(sem)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  className={`px-3 py-1.5 rounded transition-colors cursor-pointer ${
                     selectedSemesterFilter === sem
-                      ? 'bg-brand-maroon border-brand-maroon text-white'
-                      : 'bg-white/5 border-white/5 text-slate-400 hover:text-white'
+                      ? 'bg-maroon-800 text-white font-semibold shadow-sm'
+                      : 'bg-[#161a24] text-zinc-400 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  {sem === 'All' ? 'Semua Semester' : `Semester ${sem}`}
+                  {sem === 'All' ? 'Semua' : `Sem. ${sem}`}
                 </button>
               ))}
             </div>
-          </div>
 
-          {loading ? (
-            <div className="text-center py-20">
-              <div className="h-8 w-8 rounded-full border-4 border-brand-maroon border-t-transparent animate-spin mx-auto"></div>
-              <p className="text-xs text-slate-400 mt-2">Memuat foto...</p>
-            </div>
-          ) : filteredGallery.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center space-y-2">
-              <p className="text-slate-400 text-sm">Tidak ada foto kenangan untuk filter ini.</p>
-              <p className="text-xs text-slate-500">Anda dapat membagikan momen pertama di panel kiri!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {filteredGallery.map((item) => (
-                <article
-                  key={item.id}
-                  className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-brand-maroon/30 hover:bg-white/10 transition-all duration-300 flex flex-col justify-between group shadow-lg"
-                >
-                  {/* Image Container */}
-                  <div className="relative h-48 w-full bg-slate-900 overflow-hidden">
-                    <img 
-                      src={item.foto_url} 
-                      alt={item.judul_momen}
-                      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onError={(e) => {
-                        e.target.onerror = null; 
-                        e.target.src = 'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=800&auto=format&fit=crop&q=60';
-                      }}
-                    />
-                    <span className="absolute bottom-3 left-3 bg-brand-maroon text-white font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded shadow">
-                      Semester {item.semester}
-                    </span>
-                  </div>
-
-                  {/* Content Container */}
-                  <div className="p-5 flex-grow flex flex-col justify-between gap-3">
-                    <div className="space-y-1.5">
-                      <h3 className="font-bold text-white text-base leading-snug font-serif truncate">
-                        {item.judul_momen}
-                      </h3>
-                      <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
-                        {item.deskripsi}
+            {loading ? (
+              <div className="bg-[#11141c]/90 border border-white/10 rounded-lg p-12 text-center text-zinc-400 font-mono text-xs">
+                Memuat galeri…
+              </div>
+            ) : filteredGallery.length === 0 ? (
+              <div className="bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-12 text-center">
+                <span className="material-symbols-outlined text-3xl text-zinc-600 block mb-2">photo_library</span>
+                <p className="text-zinc-400 font-mono text-xs">Belum ada momen untuk filter ini.</p>
+                <p className="text-zinc-500 font-mono text-[11px] mt-1">Bagikan momen pertama lewat panel di samping.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {filteredGallery.map((item) => (
+                  <article
+                    key={item.id}
+                    className="bg-[#11141c]/90 border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition-colors group"
+                  >
+                    <div className="relative h-44 bg-[#0b0e14] overflow-hidden">
+                      <img
+                        src={item.foto_url}
+                        alt={item.judul_momen}
+                        className="h-full w-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+                        onError={(e) => { e.target.style.display = 'none' }}
+                      />
+                      <span className="absolute top-2.5 left-2.5 bg-[#0b0e14]/85 border border-white/10 text-zinc-200 font-mono text-[10px] px-2 py-0.5 rounded">
+                        Sem. {item.semester}
+                      </span>
+                    </div>
+                    <div className="p-4 flex flex-col gap-1.5">
+                      <h3 className="text-sm font-semibold text-white leading-snug">{item.judul_momen}</h3>
+                      <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{item.deskripsi}</p>
+                      <p className="font-mono text-[10px] text-zinc-500 pt-2 border-t border-white/5 mt-1">
+                        {new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </p>
                     </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
-                    <time className="text-[10px] text-slate-500 font-mono block text-right border-t border-white/5 pt-3">
-                      Dibagikan: {new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </time>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        </div>
 
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-brand-dark/80 py-8 text-center text-xs text-slate-500 mt-12">
-        <p>© 2026 Besiuin (Sistem Informasi UIN). All rights reserved.</p>
+      <footer className="relative z-10 w-full bg-[#0b0e14]/90 border-t border-white/10 py-8 text-xs font-mono text-zinc-500 text-center">
+        Besiuin Space • Galeri Kenangan Kelas Sistem Informasi
       </footer>
     </div>
   )

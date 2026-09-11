@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { compressAvatar } from '../utils/image'
+import { uploadToStorage } from '../utils/storage'
 
-export default function HallOfFame({ onBack, userRole }) {
+export default function HallOfFame({ userRole }) {
   const [activeTab, setActiveTab] = useState('vote') // 'vote' | 'leaderboard' | 'manage'
   const [categories, setCategories] = useState([])
   const [candidates, setCandidates] = useState([])
@@ -19,9 +21,11 @@ export default function HallOfFame({ onBack, userRole }) {
   const [submittingKategori, setSubmittingKategori] = useState(false)
 
   const [newKandidatNama, setNewKandidatNama] = useState('')
-  const [newKandidatFoto, setNewKandidatFoto] = useState('')
+  const [newKandidatFoto, setNewKandidatFoto] = useState(null) // data URL
+  const [processingFoto, setProcessingFoto] = useState(false)
   const [newKandidatKategoriId, setNewKandidatKategoriId] = useState('')
   const [submittingKandidat, setSubmittingKandidat] = useState(false)
+  const fotoInputRef = useRef(null)
 
   // Fetch all data
   useEffect(() => {
@@ -46,7 +50,6 @@ export default function HallOfFame({ onBack, userRole }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'awards_kandidat' },
         () => {
-          // Re-fetch candidate data to keep vote counts live
           fetchCandidatesOnly()
         }
       )
@@ -77,46 +80,27 @@ export default function HallOfFame({ onBack, userRole }) {
       setLoading(true)
       setStatusMessage(null)
 
-      // 1. Fetch categories
       const { data: katData, error: katError } = await supabase
         .from('awards_kategori')
         .select('*')
         .order('nama_kategori', { ascending: true })
 
-      // 2. Fetch candidates
       const { data: kandData, error: kandError } = await supabase
         .from('awards_kandidat')
         .select('*')
         .order('nama_kandidat', { ascending: true })
 
-      let useMock = false
       if ((katError && katError.code === '42P01') || (kandError && kandError.code === '42P01')) {
-        useMock = true
         setStatusMessage({
           type: 'warning',
-          text: 'Tabel awards_kategori atau awards_kandidat belum dibuat di database. Menggunakan data simulasi lokal.'
+          text: 'Tabel awards_kategori atau awards_kandidat belum dibuat di database. Menampilkan data kosong.'
         })
-      }
-
-      if (useMock) {
-        setCategories([
-          { id: 1, nama_kategori: 'Mahasiswa Ter-Ambis' },
-          { id: 2, nama_kategori: 'Mahasiswa Ter-Gokil' },
-          { id: 3, nama_kategori: 'Mahasiswa Ter-Solutif' }
-        ])
-        setCandidates([
-          { id: 101, kategori_id: 1, nama_kandidat: 'Arghi Vianuri', foto_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=85', vote_count: 12 },
-          { id: 102, kategori_id: 1, nama_kandidat: 'Rajif', foto_url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=400&auto=format&fit=crop&q=85', vote_count: 7 },
-          { id: 103, kategori_id: 2, nama_kandidat: 'Pais', foto_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=85', vote_count: 15 },
-          { id: 104, kategori_id: 2, nama_kandidat: 'Rapi', foto_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=85', vote_count: 11 },
-          { id: 105, kategori_id: 3, nama_kandidat: 'Diki', foto_url: 'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?w=400&auto=format&fit=crop&q=85', vote_count: 5 },
-          { id: 106, kategori_id: 3, nama_kandidat: 'Fajar', foto_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&auto=format&fit=crop&q=85', vote_count: 9 }
-        ])
+        setCategories([])
+        setCandidates([])
       } else {
         setCategories(katData || [])
         setCandidates(kandData || [])
-        
-        // Auto select first category if available
+
         if (katData && katData.length > 0) {
           setSelectedCategoryId(katData[0].id)
         }
@@ -128,7 +112,6 @@ export default function HallOfFame({ onBack, userRole }) {
     }
   }
 
-  // Cast vote for a candidate
   const handleVote = async (candidate) => {
     const catId = candidate.kategori_id
     if (myVotes.includes(catId)) {
@@ -140,7 +123,6 @@ export default function HallOfFame({ onBack, userRole }) {
       const currentVote = parseInt(candidate.vote_count) || 0
       const nextVote = currentVote + 1
 
-      // 1. Update database
       const { error } = await supabase
         .from('awards_kandidat')
         .update({ vote_count: nextVote })
@@ -148,7 +130,6 @@ export default function HallOfFame({ onBack, userRole }) {
 
       if (error) {
         if (error.code === '42P01') {
-          // Local preview fallback
           setCandidates(prev =>
             prev.map(c => (c.id === candidate.id ? { ...c, vote_count: nextVote } : c))
           )
@@ -160,13 +141,10 @@ export default function HallOfFame({ onBack, userRole }) {
           throw error
         }
       } else {
-        // Successful DB update
         const updatedVotes = [...myVotes, catId]
         setMyVotes(updatedVotes)
         localStorage.setItem('besiuin_votes', JSON.stringify(updatedVotes))
         setStatusMessage({ type: 'success', text: `Berhasil memilih ${candidate.nama_kandidat}!` })
-        
-        // Re-fetch candidates list
         await fetchCandidatesOnly()
       }
     } catch (err) {
@@ -174,7 +152,6 @@ export default function HallOfFame({ onBack, userRole }) {
     }
   }
 
-  // Create new category
   const handleCreateKategori = async (e) => {
     e.preventDefault()
     if (!newKategori.trim()) return
@@ -215,7 +192,21 @@ export default function HallOfFame({ onBack, userRole }) {
     }
   }
 
-  // Create new candidate
+  const handleFotoFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setProcessingFoto(true)
+      const dataUrl = await compressAvatar(file, { size: 400 })
+      setNewKandidatFoto(dataUrl)
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err.message || 'Gagal memproses foto.' })
+    } finally {
+      setProcessingFoto(false)
+      if (fotoInputRef.current) fotoInputRef.current.value = ''
+    }
+  }
+
   const handleCreateKandidat = async (e) => {
     e.preventDefault()
     if (!newKandidatNama.trim() || !newKandidatKategoriId) {
@@ -227,11 +218,20 @@ export default function HallOfFame({ onBack, userRole }) {
       setSubmittingKandidat(true)
       setStatusMessage(null)
 
-      const defaultFoto = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=85'
+      let fotoUrl = newKandidatFoto || ''
+      if (fotoUrl && fotoUrl.startsWith('data:')) {
+        try {
+          const fileName = `hof/${Date.now()}_${newKandidatNama.replace(/\s+/g, '_')}.jpg`
+          fotoUrl = await uploadToStorage('avatars', fotoUrl, fileName, 'image/jpeg')
+        } catch (uploadErr) {
+          console.warn('Storage upload gagal, fallback ke base64:', uploadErr.message)
+        }
+      }
+
       const payload = {
         nama_kandidat: newKandidatNama.trim(),
         kategori_id: parseInt(newKandidatKategoriId),
-        foto_url: newKandidatFoto.trim() || defaultFoto,
+        foto_url: fotoUrl,
         vote_count: 0
       }
 
@@ -253,7 +253,7 @@ export default function HallOfFame({ onBack, userRole }) {
       }
 
       setNewKandidatNama('')
-      setNewKandidatFoto('')
+      setNewKandidatFoto(null)
     } catch (err) {
       setStatusMessage({ type: 'error', text: `Gagal membuat kandidat: ${err.message}` })
     } finally {
@@ -261,122 +261,123 @@ export default function HallOfFame({ onBack, userRole }) {
     }
   }
 
-  // Helper: Find winner candidate for a category
   const getCategoryWinner = (catId) => {
     const catCandidates = candidates.filter(c => c.kategori_id === catId)
     if (catCandidates.length === 0) return null
-
-    // Sort descending by vote_count
     const sorted = [...catCandidates].sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
     return sorted[0]
   }
 
-  return (
-    <div className="min-h-screen bg-brand-dark flex flex-col justify-between text-slate-100 selection:bg-brand-maroon selection:text-white font-sans relative overflow-x-hidden">
-      
-      {/* Decorative Blob */}
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-brand-maroon/5 blur-[120px] pointer-events-none z-0"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-brand-navy/10 blur-[100px] pointer-events-none z-0"></div>
+  const tabs = [
+    { id: 'vote', label: 'Vote', icon: 'how_to_vote' },
+    { id: 'leaderboard', label: 'Klasemen', icon: 'emoji_events' },
+    ...((userRole === 'admin' || userRole === 'owner') ? [{ id: 'manage', label: 'Kelola', icon: 'settings' }] : []),
+  ]
 
-      {/* Header */}
-      <header className="border-b border-white/5 bg-brand-dark/60 backdrop-blur-md sticky top-0 z-50 py-4">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {onBack && (
-              <button 
-                onClick={onBack} 
-                className="mr-2 p-2 hover:bg-white/5 border border-white/10 rounded-xl transition-colors cursor-pointer text-slate-300 hover:text-white font-bold"
-              >
-                ← Hub
-              </button>
-            )}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-yellow-500 to-amber-600 flex items-center justify-center font-bold text-white text-lg shadow-lg shadow-yellow-500/20">
-              🏆
+  const labelCls = "block text-[11px] font-mono text-zinc-400 uppercase tracking-wider mb-1.5"
+  const inputCls = "w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+
+  const renderFoto = (cand, sizeCls) => {
+    if (cand.foto_url) {
+      return (
+        <img
+          src={cand.foto_url}
+          alt={cand.nama_kandidat}
+          className={`${sizeCls} object-cover`}
+          onError={(e) => { e.target.style.display = 'none' }}
+        />
+      )
+    }
+    return (
+      <div className={`${sizeCls} bg-maroon-900/60 border border-maroon-800 flex items-center justify-center font-mono font-bold text-rose-200`}>
+        {(cand.nama_kandidat || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-[#090b0e]/60 text-zinc-200 font-sans antialiased relative">
+      <div className="fixed inset-0 bg-[#090b0e]/60 pointer-events-none z-0"></div>
+
+      <main className="relative z-10 pt-24 pb-20 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-8">
+
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-xs text-zinc-300 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span>Apresiasi Kelas Sistem Informasi</span>
             </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight leading-none text-white font-serif">Hall of Fame</h1>
-              <span className="text-[9px] block text-yellow-500 font-mono tracking-widest uppercase mt-0.5">
-                Besiuin Awards
-              </span>
-            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              Hall of <span className="text-maroon-600">Fame</span>
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-1">
+              Nominasi penghargaan mahasiswa teraktif, terambis, dan terlucu sekelas.
+            </p>
           </div>
 
-          {/* Navigation Tabs */}
-          <div className="flex bg-white/5 border border-white/10 rounded-xl p-1">
-            <button
-              onClick={() => setActiveTab('vote')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'vote' ? 'bg-brand-maroon text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              🏆 Vote
-            </button>
-            <button
-              onClick={() => setActiveTab('leaderboard')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'leaderboard' ? 'bg-brand-maroon text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              👑 Klasemen
-            </button>
-            {(userRole === 'admin' || userRole === 'owner') && (
+          {/* Tabs */}
+          <div className="flex bg-[#121620] border border-white/10 rounded-md p-1 font-mono text-xs self-start sm:self-center">
+            {tabs.map(tab => (
               <button
-                onClick={() => setActiveTab('manage')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'manage' ? 'bg-brand-maroon text-white shadow' : 'text-slate-400 hover:text-white'
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-1.5 rounded transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === tab.id
+                    ? 'bg-maroon-800 text-white font-semibold shadow-sm'
+                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                ⚙ Kelola
+                <span className="material-symbols-outlined text-sm">{tab.icon}</span>
+                {tab.label}
               </button>
-            )}
+            ))}
           </div>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 py-12 flex-grow w-full z-10 relative">
-        
-        {/* Status Notification Alert */}
+        {/* Status Alert */}
         {statusMessage && (
-          <div className="mb-8 p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 animate-fade-in">
-            <div className="text-xs">
-              <span className="font-bold text-brand-maroon-light">
-                {statusMessage.type === 'success' ? '✓ Sukses: ' : statusMessage.type === 'warning' ? '⚠ Notifikasi: ' : '✗ Kesalahan: '}
-              </span>
-              <span className="text-slate-300 leading-relaxed">{statusMessage.text}</span>
-            </div>
-            <button 
-              onClick={() => setStatusMessage(null)}
-              className="text-slate-500 hover:text-white text-xs font-bold font-mono cursor-pointer"
-            >
-              Tutup
+          <div className={`px-4 py-3 rounded border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs font-mono ${
+            statusMessage.type === 'success'
+              ? 'bg-[#10231b] border-emerald-500/30 text-emerald-300'
+              : statusMessage.type === 'warning'
+              ? 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+              : 'bg-maroon-950/60 border-maroon-800 text-rose-300'
+          }`}>
+            <span className="leading-relaxed">{statusMessage.text}</span>
+            <button onClick={() => setStatusMessage(null)} className="text-zinc-400 hover:text-white cursor-pointer shrink-0">
+              Tutup ✕
             </button>
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-32">
-            <div className="h-10 w-10 rounded-full border-4 border-yellow-500 border-t-transparent animate-spin mx-auto"></div>
-            <p className="text-xs text-slate-400 mt-3 font-mono">Memuat nominasi penghargaan...</p>
+          <div className="text-center py-24">
+            <div className="h-7 w-7 rounded-full border-2 border-maroon-600 border-t-transparent animate-spin mx-auto mb-3"></div>
+            <p className="font-mono text-xs text-zinc-500">Memuat nominasi…</p>
           </div>
         ) : (
           <>
-            {/* ================= TAB 1: VOTE ================= */}
+            {/* ================= TAB: VOTE ================= */}
             {activeTab === 'vote' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                
-                {/* Left side: Category Selector List */}
-                <div className="lg:col-span-4 space-y-4">
-                  <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Pilih Penghargaan</h2>
-                  
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+                {/* Kiri: kategori */}
+                <div className="lg:col-span-4">
+                  <h2 className="text-sm font-mono uppercase tracking-wider text-zinc-300 flex items-center gap-2 mb-3">
+                    <span className="w-2 h-2 rounded-sm bg-maroon-700"></span>
+                    Pilih Kategori
+                  </h2>
+
                   {categories.length === 0 ? (
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-xs text-slate-400">
-                      Belum ada kategori nominasi. Tambahkan di tab Kelola.
+                    <div className="bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-6 text-center text-xs font-mono text-zinc-400">
+                      Belum ada kategori nominasi.
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {categories.map((cat) => {
                         const hasVoted = myVotes.includes(cat.id)
+                        const isActive = selectedCategoryId === cat.id
                         return (
                           <button
                             key={cat.id}
@@ -384,15 +385,17 @@ export default function HallOfFame({ onBack, userRole }) {
                               setSelectedCategoryId(cat.id)
                               setStatusMessage(null)
                             }}
-                            className={`w-full text-left p-4 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${
-                              selectedCategoryId === cat.id
-                                ? 'bg-gradient-to-r from-brand-maroon/30 to-brand-navy/30 border-brand-maroon shadow-lg'
-                                : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                            className={`w-full text-left p-3.5 rounded border transition-colors cursor-pointer flex justify-between items-center gap-2 ${
+                              isActive
+                                ? 'bg-maroon-900/40 border-maroon-700'
+                                : 'bg-[#11141c]/90 border-white/10 hover:border-white/20'
                             }`}
                           >
-                            <span className="text-sm font-bold text-white">{cat.nama_kategori}</span>
+                            <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-zinc-300'}`}>
+                              {cat.nama_kategori}
+                            </span>
                             {hasVoted && (
-                              <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#10231b] border border-emerald-500/30 text-emerald-400 shrink-0">
                                 Voted ✓
                               </span>
                             )}
@@ -403,8 +406,8 @@ export default function HallOfFame({ onBack, userRole }) {
                   )}
                 </div>
 
-                {/* Right side: Candidate List for Selected Category */}
-                <div className="lg:col-span-8 space-y-6">
+                {/* Kanan: kandidat */}
+                <div className="lg:col-span-8">
                   {selectedCategoryId ? (
                     <>
                       {(() => {
@@ -414,64 +417,55 @@ export default function HallOfFame({ onBack, userRole }) {
 
                         return (
                           <>
-                            <div className="border-b border-white/10 pb-4 flex justify-between items-end">
+                            <div className="border-b border-white/10 pb-4 mb-6 flex justify-between items-end">
                               <div>
-                                <h2 className="text-2xl font-bold text-white font-serif">{selectedCat?.nama_kategori}</h2>
-                                <p className="text-xs text-slate-400 mt-1">Berikan suara Anda pada kandidat terbaik menurut Anda.</p>
+                                <h2 className="text-xl sm:text-2xl font-bold text-white">{selectedCat?.nama_kategori}</h2>
+                                <p className="text-xs text-zinc-400 font-mono mt-1">Satu suara per kategori.</p>
                               </div>
-                              <span className="text-xs text-slate-500 font-mono">
-                                {categoryCandidates.length} Kandidat
-                              </span>
+                              <span className="font-mono text-xs text-zinc-500">{categoryCandidates.length} Kandidat</span>
                             </div>
 
                             {categoryCandidates.length === 0 ? (
-                              <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center text-slate-400 text-sm">
-                                Belum ada kandidat di kategori ini. Tambahkan di tab Kelola.
+                              <div className="bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-12 text-center text-xs font-mono text-zinc-400">
+                                Belum ada kandidat di kategori ini.
                               </div>
                             ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {categoryCandidates.map((cand) => (
-                                  <div 
-                                    key={cand.id}
-                                    className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-brand-maroon/40 transition-all flex flex-col justify-between group shadow-lg"
-                                  >
-                                    {/* Image */}
-                                    <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
-                                      <img 
-                                        src={cand.foto_url} 
-                                        alt={cand.nama_kandidat}
-                                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                        onError={(e) => {
-                                          e.target.onerror = null
-                                          e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=85'
-                                        }}
-                                      />
-                                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-4">
-                                        <h3 className="font-extrabold text-white text-base leading-tight font-serif truncate">
-                                          {cand.nama_kandidat}
-                                        </h3>
+                                  <div key={cand.id} className="bg-[#11141c]/90 border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition-colors">
+                                    <div className="relative h-44 bg-[#0b0e14] overflow-hidden">
+                                      {cand.foto_url ? (
+                                        <img
+                                          src={cand.foto_url}
+                                          alt={cand.nama_kandidat}
+                                          className="h-full w-full object-cover"
+                                          onError={(e) => { e.target.style.display = 'none' }}
+                                        />
+                                      ) : (
+                                        <div className="h-full w-full flex items-center justify-center font-mono text-3xl font-bold text-rose-200/60 bg-maroon-950/40">
+                                          {(cand.nama_kandidat || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                                        </div>
+                                      )}
+                                      <div className="absolute inset-0 bg-gradient-to-t from-[#0b0e14] via-transparent to-transparent flex items-end p-4">
+                                        <h3 className="font-semibold text-white text-base truncate">{cand.nama_kandidat}</h3>
                                       </div>
                                     </div>
 
-                                    {/* Vote section */}
-                                    <div className="p-4 flex items-center justify-between gap-4 border-t border-white/5">
+                                    <div className="p-4 flex items-center justify-between gap-3 border-t border-white/10">
                                       <div>
-                                        <span className="text-[10px] text-slate-500 uppercase tracking-widest block font-bold">Total Suara</span>
-                                        <span className="text-xl font-black text-yellow-500 font-mono">
-                                          {cand.vote_count || 0}
-                                        </span>
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest block font-mono">Suara</span>
+                                        <span className="text-lg font-bold text-amber-400 font-mono">{cand.vote_count || 0}</span>
                                       </div>
-
                                       <button
                                         onClick={() => handleVote(cand)}
                                         disabled={hasVotedThisCat}
-                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                                        className={`px-4 py-2 rounded font-mono text-xs font-medium transition-colors cursor-pointer ${
                                           hasVotedThisCat
-                                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
-                                            : 'bg-brand-maroon hover:bg-brand-maroon-hover text-white shadow shadow-brand-maroon/20'
+                                            ? 'bg-[#151922] text-zinc-600 border border-white/5 cursor-not-allowed'
+                                            : 'bg-maroon-800 hover:bg-maroon-700 text-white'
                                         }`}
                                       >
-                                        {hasVotedThisCat ? 'Sudah Vote' : 'Vote Kandidat'}
+                                        {hasVotedThisCat ? 'Sudah Vote' : 'Vote'}
                                       </button>
                                     </div>
                                   </div>
@@ -483,8 +477,8 @@ export default function HallOfFame({ onBack, userRole }) {
                       })()}
                     </>
                   ) : (
-                    <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center text-slate-400 min-h-[300px] flex flex-col justify-center items-center">
-                      <p className="text-sm">Silakan pilih kategori penghargaan di sisi kiri untuk melihat kandidat.</p>
+                    <div className="bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-12 text-center text-xs font-mono text-zinc-400 min-h-[240px] flex items-center justify-center">
+                      Pilih kategori di sisi kiri untuk melihat kandidat.
                     </div>
                   )}
                 </div>
@@ -492,63 +486,40 @@ export default function HallOfFame({ onBack, userRole }) {
               </div>
             )}
 
-            {/* ================= TAB 2: LEADERBOARD ================= */}
+            {/* ================= TAB: LEADERBOARD ================= */}
             {activeTab === 'leaderboard' && (
-              <div className="space-y-8">
-                <div className="border-b border-white/10 pb-4 text-center max-w-xl mx-auto">
-                  <h2 className="text-3xl font-extrabold text-white font-serif tracking-tight">👑 Pemenang Sementara Klasemen</h2>
-                  <p className="text-xs text-slate-400 mt-2">
-                    Berikut adalah kandidat dengan perolehan suara terbanyak saat ini pada masing-masing kategori penghargaan.
-                  </p>
-                </div>
-
+              <>
                 {categories.length === 0 ? (
-                  <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center text-slate-400">
+                  <div className="bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-12 text-center text-xs font-mono text-zinc-400">
                     Belum ada kategori nominasi di sistem.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {categories.map((cat) => {
                       const winner = getCategoryWinner(cat.id)
 
                       return (
-                        <div 
-                          key={cat.id} 
-                          className="bg-gradient-to-b from-white/5 to-brand-navy/10 border border-white/10 rounded-2xl p-6 relative flex flex-col justify-between gap-6 hover:border-yellow-500/30 transition-all shadow-xl"
-                        >
-                          <div className="absolute top-4 right-4 text-2xl" title="Pemenang Teratas">
-                            🏆
-                          </div>
-
-                          <div className="space-y-2">
-                            <span className="text-[9px] bg-brand-maroon/20 border border-brand-maroon/30 text-brand-maroon-light px-2.5 py-1 rounded-full font-bold uppercase tracking-wider inline-block">
-                              Kategori Penghargaan
-                            </span>
-                            <h3 className="text-lg font-bold text-white leading-tight font-serif">
-                              {cat.nama_kategori}
-                            </h3>
+                        <div key={cat.id} className="bg-[#11141c]/90 border border-white/10 rounded-lg p-5 flex flex-col justify-between gap-4 hover:border-amber-500/30 transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 block mb-1">Kategori</span>
+                              <h3 className="text-sm font-semibold text-white leading-tight">{cat.nama_kategori}</h3>
+                            </div>
+                            <span className="material-symbols-outlined text-amber-400 text-xl">trophy</span>
                           </div>
 
                           {winner ? (
-                            <div className="flex items-center gap-4 bg-brand-dark/40 border border-white/5 rounded-xl p-3">
-                              <img 
-                                src={winner.foto_url} 
-                                alt={winner.nama_kandidat}
-                                className="h-12 w-12 rounded-full object-cover border-2 border-yellow-500 shadow-lg shadow-yellow-500/20"
-                                onError={(e) => {
-                                  e.target.onerror = null
-                                  e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=85'
-                                }}
-                              />
-                              <div>
-                                <h4 className="font-bold text-white text-sm truncate max-w-[150px]">{winner.nama_kandidat}</h4>
-                                <p className="text-[10px] text-yellow-500 font-mono mt-0.5">
-                                  🥇 {winner.vote_count || 0} Suara Terkumpul
+                            <div className="flex items-center gap-3 bg-[#0b0e14] border border-white/10 rounded p-3">
+                              {renderFoto(winner, 'w-11 h-11 rounded border border-amber-500/40')}
+                              <div className="min-w-0">
+                                <h4 className="font-semibold text-white text-sm truncate">{winner.nama_kandidat}</h4>
+                                <p className="text-[10px] text-amber-400 font-mono mt-0.5">
+                                  {winner.vote_count || 0} suara terkumpul
                                 </p>
                               </div>
                             </div>
                           ) : (
-                            <div className="text-center py-4 bg-brand-dark/20 rounded-xl text-xs text-slate-500 font-mono">
+                            <div className="text-center py-3 bg-[#0b0e14]/60 rounded text-[11px] text-zinc-500 font-mono">
                               Belum ada kandidat / vote
                             </div>
                           )}
@@ -557,70 +528,65 @@ export default function HallOfFame({ onBack, userRole }) {
                     })}
                   </div>
                 )}
-              </div>
+              </>
             )}
 
-            {/* ================= TAB 3: MANAGE ================= */}
+            {/* ================= TAB: MANAGE ================= */}
             {activeTab === 'manage' && (userRole === 'admin' || userRole === 'owner') && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                
-                {/* Form 1: Add New Category */}
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-xl space-y-6">
-                  <div className="border-b border-white/5 pb-4">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      <span className="h-5 w-1.5 bg-yellow-500 rounded-full"></span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+
+                {/* Kategori */}
+                <div className="bg-[#11141c]/90 border border-white/10 rounded-lg p-5">
+                  <div className="border-b border-white/10 pb-3 mb-4">
+                    <h3 className="text-sm font-semibold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm text-maroon-600">category</span>
                       Buat Kategori Baru
                     </h3>
-                    <p className="text-xs text-slate-400 mt-1">Buat kategori penghargaan baru untuk kelas Anda.</p>
+                    <p className="text-xs text-zinc-400 font-mono mt-0.5">Buat kategori penghargaan baru.</p>
                   </div>
 
-                  <form onSubmit={handleCreateKategori} className="space-y-4">
+                  <form onSubmit={handleCreateKategori} className="space-y-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Nama Kategori Penghargaan
-                      </label>
+                      <label className={labelCls}>Nama Kategori</label>
                       <input
                         type="text"
                         value={newKategori}
                         onChange={(e) => setNewKategori(e.target.value)}
                         placeholder="Contoh: Mahasiswa Ter-Ambis"
-                        className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white font-semibold"
+                        className={inputCls}
                         required
                       />
                     </div>
-
                     <button
                       type="submit"
                       disabled={submittingKategori}
-                      className="w-full bg-brand-maroon hover:bg-brand-maroon-hover text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                      className="w-full py-2.5 rounded bg-maroon-800 hover:bg-maroon-700 text-white font-mono text-xs font-medium cursor-pointer disabled:opacity-50"
                     >
-                      {submittingKategori ? 'Membuat...' : 'Buat Kategori'}
+                      {submittingKategori ? 'Membuat…' : 'Buat Kategori'}
                     </button>
                   </form>
                 </div>
 
-                {/* Form 2: Add New Candidate */}
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-xl space-y-6">
-                  <div className="border-b border-white/5 pb-4">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      <span className="h-5 w-1.5 bg-yellow-500 rounded-full"></span>
-                      Tambah Nominasi Kandidat
+                {/* Kandidat */}
+                <div className="bg-[#11141c]/90 border border-white/10 rounded-lg p-5">
+                  <div className="border-b border-white/10 pb-3 mb-4">
+                    <h3 className="text-sm font-semibold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm text-maroon-600">person_add</span>
+                      Tambah Kandidat
                     </h3>
-                    <p className="text-xs text-slate-400 mt-1">Daftarkan mahasiswa sebagai kandidat nominasi.</p>
+                    <p className="text-xs text-zinc-400 font-mono mt-0.5">Daftarkan mahasiswa sebagai nominasi.</p>
                   </div>
 
-                  <form onSubmit={handleCreateKandidat} className="space-y-4">
+                  <form onSubmit={handleCreateKandidat} className="space-y-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Kategori Penghargaan
-                      </label>
+                      <label className={labelCls}>Kategori</label>
                       <select
                         value={newKandidatKategoriId}
                         onChange={(e) => setNewKandidatKategoriId(e.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white cursor-pointer"
+                        className={`${inputCls} cursor-pointer`}
                         required
                       >
-                        <option value="">-- Pilih Kategori --</option>
+                        <option value="">— Pilih kategori —</option>
                         {categories.map(c => (
                           <option key={c.id} value={c.id}>{c.nama_kategori}</option>
                         ))}
@@ -628,38 +594,72 @@ export default function HallOfFame({ onBack, userRole }) {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Nama Lengkap Kandidat
-                      </label>
+                      <label className={labelCls}>Nama Kandidat</label>
                       <input
                         type="text"
                         value={newKandidatNama}
                         onChange={(e) => setNewKandidatNama(e.target.value)}
                         placeholder="Contoh: Muhamad Arghi"
-                        className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white font-semibold"
+                        className={inputCls}
                         required
                       />
                     </div>
 
+                    {/* Upload foto langsung */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">
-                        URL Foto Profil <span className="text-[10px] text-slate-500 font-normal">(Opsional)</span>
-                      </label>
+                      <label className={labelCls}>Foto Kandidat <span className="normal-case tracking-normal text-zinc-600">(opsional)</span></label>
                       <input
-                        type="url"
-                        value={newKandidatFoto}
-                        onChange={(e) => setNewKandidatFoto(e.target.value)}
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full rounded-xl border border-white/10 bg-brand-dark p-3 text-sm focus:border-brand-maroon focus:outline-none text-white"
+                        ref={fotoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFotoFile}
+                        className="hidden"
                       />
+
+                      {newKandidatFoto ? (
+                        <div className="flex items-center gap-3">
+                          <img src={newKandidatFoto} alt="Preview" className="w-16 h-16 rounded object-cover border border-white/10" />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => fotoInputRef.current?.click()}
+                              disabled={processingFoto}
+                              className="px-3 py-2 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 text-xs font-mono text-zinc-200 cursor-pointer disabled:opacity-50"
+                            >
+                              Ganti
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewKandidatFoto(null)}
+                              className="px-3 py-2 rounded text-xs font-mono text-rose-400 hover:bg-maroon-950/60 cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => fotoInputRef.current?.click()}
+                          disabled={processingFoto}
+                          className="w-full border border-dashed border-white/15 hover:border-maroon-700 rounded py-4 flex flex-col items-center gap-1.5 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-xl">
+                            {processingFoto ? 'hourglass_top' : 'upload_file'}
+                          </span>
+                          <span className="font-mono text-[11px]">
+                            {processingFoto ? 'Memproses foto…' : 'Klik untuk pilih foto'}
+                          </span>
+                        </button>
+                      )}
                     </div>
 
                     <button
                       type="submit"
-                      disabled={submittingKandidat || categories.length === 0}
-                      className="w-full bg-brand-navy hover:bg-brand-navy-hover border border-white/5 text-white font-bold py-3.5 px-4 rounded-xl text-sm transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                      disabled={submittingKandidat || categories.length === 0 || processingFoto}
+                      className="w-full py-2.5 rounded bg-[#151922] hover:bg-[#1a202c] border border-white/10 hover:border-maroon-700 text-white font-mono text-xs font-medium cursor-pointer disabled:opacity-50"
                     >
-                      {submittingKandidat ? 'Mendaftarkan...' : 'Daftarkan Kandidat'}
+                      {submittingKandidat ? 'Mendaftarkan…' : 'Daftarkan Kandidat'}
                     </button>
                   </form>
                 </div>
@@ -671,9 +671,8 @@ export default function HallOfFame({ onBack, userRole }) {
 
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-brand-dark/80 py-8 text-center text-xs text-slate-500 mt-12">
-        <p>© 2026 Besiuin (Sistem Informasi UIN). All rights reserved.</p>
+      <footer className="relative z-10 w-full bg-[#0b0e14]/90 border-t border-white/10 py-8 text-xs font-mono text-zinc-500 text-center">
+        Besiuin Space • Hall of Fame Kelas Sistem Informasi
       </footer>
     </div>
   )

@@ -1,342 +1,294 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../config/supabaseClient'
 
-export default function QuotesPage({ onBack }) {
+export default function QuotesPage() {
   const [quotes, setQuotes] = useState([])
-  const [quoteText, setQuoteText] = useState('')
-  const [context, setContext] = useState('')
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('Semua')
+
+  // New quote form states
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [quoteText, setQuoteText] = useState('')
+  const [authorText, setAuthorText] = useState('')
+  const [contextText, setContextText] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [statusMessage, setStatusMessage] = useState(null)
-  const [realtimeActive, setRealtimeActive] = useState(false)
 
-  // Fetch initial quotes and setup real-time subscription
+  const categories = ['Semua', 'Dosen', 'Mahasiswa', 'Motivasi', 'Lucu', 'YTTA']
+
   useEffect(() => {
-    const fetchQuotes = async () => {
-      try {
-        setLoading(true)
-        const { data, error } = await supabase
-          .from('quotes')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          if (error.code === '42P01') { // Tabel belum ada di database
-            console.warn("Table 'quotes' does not exist in Supabase yet.")
-            setStatusMessage({
-              type: 'warning',
-              text: 'Tabel "quotes" belum dibuat di Supabase. Silakan hubungi admin untuk melakukan migrasi skema database.'
-            })
-            // Mock data untuk preview UI
-            setQuotes([
-              {
-                id: 1,
-                quote: "Belajarlah sampai ke negeri Cina, tapi jangan lupa pulang untuk membangun UIN.",
-                author: "Bapak Dekan",
-                context: "Kuliah Umum Semester Ganjil",
-                created_at: new Date().toISOString()
-              },
-              {
-                id: 2,
-                quote: "Koding itu seperti shalat, harus khusyuk dan tertib baris-berbaris (indentasi).",
-                author: "Dosen Pemrograman",
-                context: "Praktikum Web Dasar",
-                created_at: new Date(Date.now() - 3600000).toISOString()
-              }
-            ])
-          } else {
-            throw error
-          }
-        } else {
-          setQuotes(data || [])
-        }
-      } catch (err) {
-        setStatusMessage({ type: 'error', text: `Gagal memuat quotes: ${err.message}` })
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchQuotes()
-
-    // Subskripsi postgres_changes untuk pembaruan real-time
-    const channel = supabase
-      .channel('realtime-quotes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'quotes' },
-        (payload) => {
-          setRealtimeActive(true)
-          if (payload.eventType === 'INSERT') {
-            setQuotes((prev) => [payload.new, ...prev])
-          } else if (payload.eventType === 'DELETE') {
-            setQuotes((prev) => prev.filter((q) => q.id !== payload.old.id))
-          } else if (payload.eventType === 'UPDATE') {
-            setQuotes((prev) =>
-              prev.map((q) => (q.id === payload.new.id ? payload.new : q))
-            )
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setRealtimeActive(true)
-        }
-      })
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
   }, [])
 
-  // Mengirim quote baru ke database
-  const handleSubmit = async (e) => {
+  const fetchQuotes = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        if (error.code === '42P01') {
+          // Mock data
+          setQuotes([
+            { id: 1, quote: "AI TIDAK PUNYA MEMORI", author: "Shidiqi", context: "YTTA", likes: 24 },
+            { id: 2, quote: "Kalo bisa dikerjain H-1 kenapa harus H-7?", author: "Anonymous", context: "Lucu", likes: 18 },
+            { id: 3, quote: "Metopen itu simpel, yang ribet itu milih judulnya.", author: "Dosen Metopen", context: "Dosen", likes: 31 },
+            { id: 4, quote: "Error is just a feature waiting for documentation.", author: "Anak Web", context: "Motivasi", likes: 12 },
+          ])
+        } else {
+          throw error
+        }
+      } else {
+        setQuotes(data || [])
+      }
+    } catch (err) {
+      console.error('Error fetching quotes:', err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLike = async (id, currentLikes = 0) => {
+    try {
+      const newLikes = currentLikes + 1
+      setQuotes(prev => prev.map(q => q.id === id ? { ...q, likes: newLikes } : q))
+      
+      await supabase.from('quotes').update({ likes: newLikes }).eq('id', id)
+    } catch (err) {
+      console.error('Error updating likes:', err)
+    }
+  }
+
+  const handleAddQuote = async (e) => {
     e.preventDefault()
-    if (!quoteText.trim()) {
-      setStatusMessage({ type: 'error', text: 'Quote wajib diisi!' })
+    if (!quoteText.trim() || !authorText.trim()) {
+      alert("Kutipan dan Nama Tokoh wajib diisi!")
       return
     }
 
     try {
       setSubmitting(true)
-      setStatusMessage(null)
-
-      const newQuote = {
-        quote: quoteText,
-        author: 'Anonymous',
-        context: context.trim() || 'Tanpa konteks',
+      const payload = {
+        quote: quoteText.trim(),
+        author: authorText.trim(),
+        context: contextText.trim() || 'Umum',
+        likes: 0
       }
 
-      const { data, error } = await supabase
-        .from('quotes')
-        .insert([newQuote])
-        .select()
+      const { error } = await supabase.from('quotes').insert([payload])
 
-      if (error) {
-        if (error.code === '42P01') {
-          // Preview lokal jika tabel belum siap
-          const mockNewQuote = {
-            id: Date.now(),
-            ...newQuote,
-            created_at: new Date().toISOString()
-          }
-          setQuotes((prev) => [mockNewQuote, ...prev])
-          setStatusMessage({
-            type: 'warning',
-            text: 'Quote ditambahkan ke preview lokal (Tabel "quotes" belum terbuat di database Supabase).'
-          })
-        } else {
-          throw error
-        }
+      if (error && error.code === '42P01') {
+        setQuotes(prev => [{ id: Date.now(), ...payload }, ...prev])
       } else {
-        setStatusMessage({ type: 'success', text: 'Quote berhasil dibagikan!' })
+        await fetchQuotes()
       }
 
       setQuoteText('')
-      setContext('')
+      setAuthorText('')
+      setContextText('')
+      setIsModalOpen(false)
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal memposting: ${err.message}` })
+      alert(`Gagal menambah quote: ${err.message}`)
     } finally {
       setSubmitting(false)
     }
   }
 
-  const formatDate = (isoString) => {
-    const options = { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short', year: 'numeric' }
-    return new Date(isoString).toLocaleDateString('id-ID', options)
-  }
+  const filteredQuotes = quotes.filter(q => {
+    const matchesCategory = selectedCategory === 'Semua' || q.context === selectedCategory
+    const matchesSearch = q.quote.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          q.author.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesCategory && matchesSearch
+  })
 
   return (
-    <div className="min-h-screen bg-brand-dark text-slate-100 flex flex-col justify-between selection:bg-brand-maroon selection:text-white relative overflow-hidden">
-      {/* Background Glow effects */}
-      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-maroon/10 rounded-full blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-navy/30 rounded-full blur-[120px] pointer-events-none"></div>
+    <div className="min-h-screen bg-[#090b0e]/60 text-zinc-200 font-sans antialiased relative">
+      
+      {/* Background Overlay */}
+      <div className="fixed inset-0 bg-[#090b0e]/60 pointer-events-none z-0"></div>
 
-      {/* Header */}
-      <header className="border-b border-white/5 bg-brand-dark/60 backdrop-blur-md sticky top-0 z-50 py-4">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {onBack && (
-              <button 
-                onClick={onBack} 
-                className="mr-2 p-2 hover:bg-white/5 border border-white/10 rounded-xl transition-colors cursor-pointer text-slate-300 hover:text-white"
-                title="Kembali ke Dashboard"
-              >
-                ← Hub
-              </button>
-            )}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-maroon to-red-900 flex items-center justify-center font-bold text-white text-lg shadow-lg">
-              Q
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight leading-none text-white">Quotes Wall</h1>
-              <span className="text-[9px] block text-brand-maroon-light/60 font-mono tracking-widest uppercase mt-0.5">
-                Besiuin Space
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <span className="flex items-center space-x-1.5 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full text-xs">
-              <span className={`h-2.5 w-2.5 rounded-full ${realtimeActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
-              <span className="text-slate-400 font-mono text-[11px]">
-                {realtimeActive ? 'Real-time Listening' : 'Real-time Offline'}
-              </span>
-            </span>
-          </div>
-        </div>
-      </header>
 
-      {/* Main Layout */}
-      <main className="max-w-6xl mx-auto px-6 py-12 flex-grow w-full grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+      {/* MAIN CONTENT */}
+      <main className="relative z-10 pt-24 pb-20 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-8">
         
-        {/* Kolom Kiri: Form Input */}
-        <section className="lg:col-span-5 space-y-6">
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl">
-            <div className="border-b border-white/5 pb-4 mb-6">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <span className="h-6 w-1.5 rounded-full bg-brand-maroon inline-block"></span>
-                Bagikan Quote Hari Ini
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Tulis kata-kata mutiara, candaan kelas, atau kutipan dosen terfavorit Anda.
-              </p>
+        {/* HEADER */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-xs text-zinc-300 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-maroon-700"></span>
+              <span>Dinding Kutipan Legendaris</span>
             </div>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              Quotes Wall <span className="text-maroon-600">Besiuin Space</span>
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-1">
+              Kumpulan kata-kata paling memorable, lucu, dan inspiratif dari perkuliahan.
+            </p>
+          </div>
 
-            {statusMessage && (
-              <div className={`p-4 rounded-xl text-xs mb-6 border ${
-                statusMessage.type === 'success' ? 'bg-emerald-950/45 border-emerald-800 text-emerald-300' :
-                statusMessage.type === 'warning' ? 'bg-amber-950/45 border-amber-800 text-amber-300' :
-                'bg-rose-950/45 border-rose-800 text-rose-300'
-              }`}>
-                <div className="font-semibold mb-1 flex items-center gap-1.5">
-                  {statusMessage.type === 'success' && '✓ Sukses:'}
-                  {statusMessage.type === 'warning' && '⚠ Informasi:'}
-                  {statusMessage.type === 'error' && '✗ Kesalahan:'}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="px-4 py-2 rounded bg-maroon-800 hover:bg-maroon-700 text-white font-mono text-xs font-medium transition-colors flex items-center gap-2 cursor-pointer shadow-md self-start sm:self-center"
+          >
+            <span className="material-symbols-outlined text-sm">edit_note</span>
+            <span>Tulis Quote Baru</span>
+          </button>
+        </div>
+
+        {/* SEARCH & CATEGORY FILTER */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-[#11141c]/90 p-4 rounded-lg border border-white/10">
+          
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded transition-colors cursor-pointer ${
+                  selectedCategory === cat
+                    ? 'bg-maroon-800 text-white font-semibold shadow-sm'
+                    : 'bg-[#161a24] text-zinc-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative min-w-[220px]">
+            <span className="material-symbols-outlined absolute left-3 top-2.5 text-sm text-zinc-500">search</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari kutipan / tokoh..."
+              className="w-full bg-[#0b0e14] border border-white/10 rounded pl-9 pr-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+            />
+          </div>
+
+        </div>
+
+        {/* QUOTES GRID */}
+        {loading ? (
+          <div className="bg-[#11141c]/90 border border-white/10 rounded-lg p-12 text-center text-zinc-400 font-mono text-xs">
+            Memuat kutipan...
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredQuotes.map((q) => (
+              <div key={q.id} className="bg-[#11141c]/90 border border-white/10 rounded-lg p-6 flex flex-col justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-maroon-600 text-2xl shrink-0">format_quote</span>
+                  <div>
+                    <p className="text-base sm:text-lg font-semibold font-mono text-white tracking-tight leading-snug">
+                      “{q.quote}”
+                    </p>
+                  </div>
                 </div>
-                <p className="leading-relaxed">{statusMessage.text}</p>
+
+                <div className="pt-4 border-t border-white/10 flex items-center justify-between font-mono text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-200 font-medium">{q.author}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 uppercase text-zinc-400">
+                      {q.context || 'Umum'}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => handleLike(q.id, q.likes)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 hover:border-maroon-700 text-zinc-300 hover:text-rose-300 transition-colors cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-xs text-rose-400">favorite</span>
+                    <span>{q.likes || 0}</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {filteredQuotes.length === 0 && (
+              <div className="md:col-span-2 bg-[#11141c]/50 border border-dashed border-white/10 rounded-lg p-12 text-center text-zinc-400 font-mono text-xs">
+                Tidak ada kutipan ditemukan untuk kategori ini.
               </div>
             )}
+          </div>
+        )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+      </main>
+
+      {/* NEW QUOTE MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#11141c] border border-white/10 rounded-lg p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-base font-semibold text-white font-mono uppercase flex items-center gap-2">
+                <span className="material-symbols-outlined text-maroon-600">format_quote</span>
+                Tulis Quote Baru
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-white">✕</button>
+            </div>
+
+            <form onSubmit={handleAddQuote} className="flex flex-col gap-3 font-mono text-xs">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Isi Quote
-                </label>
+                <label className="text-zinc-400 block mb-1">Kutipan / Kata-kata *</label>
                 <textarea
                   value={quoteText}
                   onChange={(e) => setQuoteText(e.target.value)}
-                  placeholder="&ldquo;Ketik kutipan menarik di sini...&rdquo;"
-                  rows="4"
-                  className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm focus:border-brand-maroon focus:bg-brand-dark focus:outline-none transition-all resize-none text-white"
+                  placeholder="Contoh: AI TIDAK PUNYA MEMORI..."
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-white focus:outline-none focus:border-maroon-700 resize-none"
+                  rows="3"
                   required
-                ></textarea>
+                />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Nama Tokoh
-                  </label>
-                  <input
-                    type="text"
-                    value="Anonymous"
-                    disabled
-                    className="w-full rounded-xl border border-white/5 bg-white/5 p-3 text-sm text-slate-400 cursor-not-allowed"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Konteks <span className="text-slate-500 font-normal">(Opsional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={context}
-                    onChange={(e) => setContext(e.target.value)}
-                    placeholder="Misal: Kuliah Basis Data"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm focus:border-brand-maroon focus:bg-brand-dark focus:outline-none transition-all text-white"
-                  />
-                </div>
+              <div>
+                <label className="text-zinc-400 block mb-1">Nama Tokoh / Pengucap *</label>
+                <input
+                  type="text"
+                  value={authorText}
+                  onChange={(e) => setAuthorText(e.target.value)}
+                  placeholder="Contoh: Pak Syopian / Rajif"
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-white focus:outline-none focus:border-maroon-700"
+                  required
+                />
               </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-brand-maroon hover:bg-brand-maroon-hover text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-brand-maroon/20 hover:shadow-brand-maroon/30 active:scale-[0.98] transition-all text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-              >
-                {submitting ? (
-                  <>
-                    <span className="animate-spin text-xs">↻</span>
-                    <span>Mengirim...</span>
-                  </>
-                ) : (
-                  <span>Bagikan Quote</span>
-                )}
-              </button>
+              <div>
+                <label className="text-zinc-400 block mb-1">Kategori / Konteks</label>
+                <select
+                  value={contextText}
+                  onChange={(e) => setContextText(e.target.value)}
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-white focus:outline-none focus:border-maroon-700"
+                >
+                  {categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-2 rounded bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 rounded bg-maroon-800 text-white font-medium hover:bg-maroon-700"
+                >
+                  {submitting ? 'Menyimpan...' : 'Bagikan Quote'}
+                </button>
+              </div>
             </form>
           </div>
-        </section>
+        </div>
+      )}
 
-        {/* Kolom Kanan: Daftar Quotes Terkini */}
-        <section className="lg:col-span-7 space-y-6">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <span className="h-6 w-1.5 rounded-full bg-brand-maroon inline-block"></span>
-              Kutipan Terkini
-            </h2>
-            <span className="text-xs bg-white/5 border border-white/10 text-slate-300 px-3 py-1 rounded-full font-bold">
-              {quotes.length} Total
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="text-center py-20 space-y-4">
-              <div className="h-8 w-8 rounded-full border-4 border-brand-maroon border-t-transparent animate-spin mx-auto"></div>
-              <p className="text-sm text-slate-500">Memuat quotes secara real-time...</p>
-            </div>
-          ) : quotes.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center shadow-sm space-y-3">
-              <div className="text-4xl">✍</div>
-              <h3 className="font-bold text-white">Belum ada quote</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Jadilah orang pertama yang menuliskan kata-kata legendaris hari ini di sistem kelas Besiuin!
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {quotes.map((item) => (
-                <article
-                  key={item.id}
-                  className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-brand-maroon/30 hover:bg-white/10 transition-all duration-300 relative group overflow-hidden shadow-lg"
-                >
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-brand-maroon/5 to-transparent rounded-tr-2xl group-hover:scale-125 transition-transform duration-500"></div>
-                  
-                  <blockquote className="text-base font-sans italic text-slate-200 leading-relaxed relative z-10 tracking-wide font-medium">
-                    &ldquo;{item.quote}&rdquo;
-                  </blockquote>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-white/5 text-xs">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-bold text-brand-maroon-light">{item.author}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-slate-300 bg-white/5 border border-white/5 px-2.5 py-0.5 rounded-md font-medium text-[10px]">
-                        {item.context}
-                      </span>
-                    </div>
-                    <time className="text-slate-500 font-mono text-[10px]">
-                      {formatDate(item.created_at)}
-                    </time>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-brand-dark/80 py-8 text-center text-xs text-slate-500 mt-12">
-        <p>© 2026 Besiuin (Sistem Informasi UIN). Didesain dengan tema Maroon & Navy.</p>
+      {/* FOOTER */}
+      <footer className="w-full bg-[#0b0e14]/90 border-t border-white/10 py-8 relative z-10 text-xs font-mono text-zinc-500 text-center">
+        Besiuin Space • Quotes Wall Kelas Sistem Informasi
       </footer>
     </div>
   )

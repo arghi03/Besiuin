@@ -1,21 +1,112 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Urbanist:ital,wght@0,100..900;1,100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 @import "tailwindcss";
 
 @theme {
-  /* Fonts */
-  --font-sans: 'Urbanist', system-ui, -apple-system, sans-serif;
-  --font-serif: 'Playfair Display', Georgia, serif;
+  /* Typography */
+  --font-sans: 'Geist', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 
-  /* Brand Theme Colors */
-  --color-brand-maroon: #7A1C1C;
-  --color-brand-maroon-hover: #601414;
-  --color-brand-maroon-light: #FBEBEB;
-  
-  --color-brand-navy: #1B2A47;
-  --color-brand-navy-hover: #121E33;
-  --color-brand-navy-light: #E8EEF9;
-  
-  --color-brand-light: #F8F9FA;
-  --color-brand-gray: #E9ECEF;
-  --color-brand-dark: #0D1420;
+  /* Maroon Scale (Stitch Theme) */
+  --color-maroon-900: #7f1d1d;
+  --color-maroon-800: #991b1b;
+  --color-maroon-700: #b91c1c;
+  --color-maroon-600: #dc2626;
+  --color-maroon-500: #ef4444;
+  --color-maroon-400: #f87171;
+}
+
+/* ============ Base Styles ============ */
+
+html {
+  background-color: #090b0e;
+  color-scheme: dark;
+}
+
+body {
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: #e4e4e7;
+  font-family: 'Geist', 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Material Symbols Helper */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090b0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2430;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #991b1b;
+}
+
+/* Glass & Card Utilities */
+.stitch-card {
+  background-color: rgba(17, 20, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+}
+
+.stitch-card-hover {
+  transition: all 0.2s ease-in-out;
+}
+.stitch-card-hover:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.stitch-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+/* Marquee Animation */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 35s linear infinite;
+}
+
+/* Fade Up Entrance */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
