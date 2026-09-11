@@ -10,7 +10,6 @@ export default function LoginPage() {
   const [authSuccess, setAuthSuccess] = useState(null)
 
   // Signup fields
-  const [signupNama, setSignupNama] = useState('')
   const [signupUsername, setSignupUsername] = useState('')
 
   const handleAuth = async (e) => {
@@ -116,9 +115,8 @@ export default function LoginPage() {
           throw new Error(signUpError.message)
         }
 
-        // Update whitelist nama & username on signup
+        // Update whitelist username on signup
         const updatePayload = {}
-        if (signupNama.trim()) updatePayload.nama_mahasiswa = signupNama.trim()
         if (signupUsername.trim()) updatePayload.username = signupUsername.trim().toLowerCase()
 
         if (Object.keys(updatePayload).length > 0) {
@@ -247,19 +245,6 @@ export default function LoginPage() {
 
               {authMode === 'signup' && (
                 <>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
-                      Nama Lengkap
-                    </label>
-                    <input
-                      type="text"
-                      value={signupNama}
-                      onChange={(e) => setSignupNama(e.target.value)}
-                      placeholder="Nama lengkap Anda"
-                      className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
-                      required
-                    />
-                  </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
                       Username

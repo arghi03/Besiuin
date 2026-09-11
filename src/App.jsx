@@ -22,7 +22,7 @@ function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isWhitelistOpen, setIsWhitelistOpen] = useState(false)
 
-  // Profile state (nama tampilan + foto)
+  // Profile state (nama tampilan + foto + username)
   const [userName, setUserName] = useState('')
   const [profilePhoto, setProfilePhoto] = useState(null)
 
@@ -78,9 +78,9 @@ function App() {
         setLoading(false)
       }
 
-      // Load profil (nama + foto)
+      // Load profil (username + foto)
       const profile = await fetchProfile(email)
-      setUserName(profile.nama || email.split('@')[0])
+      setUserName(profile.username || email.split('@')[0])
       setProfilePhoto(profile.foto || null)
     }
 
@@ -89,7 +89,7 @@ function App() {
 
   // Dipanggil dari ProfileModal saat profil berubah
   const handleProfileUpdated = useCallback((patch) => {
-    if ('nama' in patch) setUserName(patch.nama)
+    if ('username' in patch) setUserName(patch.username)
     if ('foto' in patch) setProfilePhoto(patch.foto)
   }, [])
 

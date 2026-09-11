@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../config/supabaseClient'
 import { compressAvatar } from '../utils/image'
-import { fetchProfile, updateProfileName, updateProfilePhoto } from '../utils/profile'
+import { fetchProfile, updateProfileUsername, updateProfilePhoto } from '../utils/profile'
 
 export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
-  const [nama, setNama] = useState('')
+  const [username, setUsername] = useState('')
   const [foto, setFoto] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
-  const [savingName, setSavingName] = useState(false)
+  const [savingUsername, setSavingUsername] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [status, setStatus] = useState(null) // { type: 'success'|'error', text }
 
@@ -24,7 +24,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
       try {
         setLoadingProfile(true)
         const profile = await fetchProfile(userEmail)
-        setNama(profile.nama || (userEmail || '').split('@')[0])
+        setUsername(profile.username || (userEmail || '').split('@')[0])
         setFoto(profile.foto || null)
       } finally {
         setLoadingProfile(false)
@@ -58,24 +58,24 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
     }
   }
 
-  const handleSaveName = async (e) => {
+  const handleSaveUsername = async (e) => {
     e.preventDefault()
-    if (!nama.trim()) return
-    setSavingName(true)
+    if (!username.trim()) return
+    setSavingUsername(true)
     setStatus(null)
     try {
-      const res = await updateProfileName(userEmail, nama.trim())
+      const res = await updateProfileUsername(userEmail, username.trim())
       setStatus({
         type: 'success',
         text: res.via === 'db'
-          ? 'Nama berhasil diperbarui di server.'
-          : 'Nama tersimpan sementara di perangkat ini.',
+          ? 'Profil berhasil diperbarui di server.'
+          : 'Profil tersimpan sementara di perangkat ini.',
       })
-      onProfileUpdated?.({ nama: nama.trim() })
+      onProfileUpdated?.({ username: username.trim() })
     } catch (err) {
-      setStatus({ type: 'error', text: err.message || 'Gagal menyimpan nama.' })
+      setStatus({ type: 'error', text: err.message || 'Gagal menyimpan profil.' })
     } finally {
-      setSavingName(false)
+      setSavingUsername(false)
     }
   }
 
@@ -150,34 +150,34 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
             </div>
           ) : (
             <>
-              {/* Photo + Name */}
+              {/* Photo + Username */}
               <div className="flex items-start gap-4">
                 <div className="shrink-0">
                   {foto ? (
                     <img src={foto} alt="Foto profil" className="w-16 h-16 rounded-lg object-cover border border-white/15" />
                   ) : (
                     <div className="w-16 h-16 rounded-lg bg-maroon-900/60 border border-maroon-800 flex items-center justify-center font-mono text-lg font-bold text-rose-200">
-                      {(nama || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                      {(username || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
                     </div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0 space-y-3">
                   <div>
-                    <p className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Nama Tampilan</p>
-                    <form onSubmit={handleSaveName} className="flex items-center gap-2 mt-1">
+                    <p className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Username</p>
+                    <form onSubmit={handleSaveUsername} className="flex items-center gap-2 mt-1">
                       <input
                         type="text"
-                        value={nama}
-                        onChange={(e) => setNama(e.target.value)}
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
                         className="flex-1 bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-maroon-700 transition-colors"
-                        placeholder="Nama kamu"
+                        placeholder="username_unik"
                       />
                       <button
                         type="submit"
-                        disabled={savingName || !nama.trim()}
+                        disabled={savingUsername || !username.trim()}
                         className="px-3 py-2 rounded bg-[#151922] hover:bg-[#1a202c] border border-white/10 hover:border-maroon-700 text-zinc-300 text-xs font-mono transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        {savingName ? '...' : 'Simpan'}
+                        {savingUsername ? '...' : 'Simpan'}
                       </button>
                     </form>
                   </div>

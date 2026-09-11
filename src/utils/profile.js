@@ -2,8 +2,8 @@ import { supabase } from '../config/supabaseClient'
 import { uploadToStorage } from './storage'
 
 // Profil disimpan tiga lapis:
-// 1. Supabase Storage (foto) + DB (nama)
-// 2. Database (whitelist_users.nama_mahasiswa + foto_url bila kolom tersedia)
+// 1. Supabase Storage (foto) + DB (username sebagai nama tampilan)
+// 2. Database (whitelist_users.username + foto_url bila kolom tersedia)
 // 3. localStorage per-email sebagai fallback/override cepat (foto selalu di sini)
 
 const key = (email) => `besiuin_profile_${(email || '').toLowerCase()}`
@@ -25,44 +25,45 @@ export function saveLocalProfile(email, patch) {
 // Ambil profil gabungan: DB dulu, timpa dengan localStorage bila ada
 export async function fetchProfile(email) {
   const local = loadLocalProfile(email)
-  let nama = local.nama || null
+  let username = local.username || null
   let foto = local.foto || null
 
   try {
     const { data, error } = await supabase
       .from('whitelist_users')
-      .select('nama_mahasiswa, foto_url')
+      .select('username, foto_url')
       .eq('email', (email || '').toLowerCase())
       .maybeSingle()
 
     if (!error && data) {
-      if (!nama) nama = data.nama_mahasiswa || null
+      if (!username) username = data.username || null
       if (!foto) foto = data.foto_url || null
     }
   } catch {
     // abaikan — pakai lokal
   }
 
-  return { nama, foto }
+  return { username, foto }
 }
 
-// Simpan nama: coba DB, gagal → lokal
-export async function updateProfileName(email, nama) {
+// Simpan username (nama profil): coba DB, gagal → lokal
+export async function updateProfileUsername(email, username) {
   const emailLower = (email || '').toLowerCase()
+  const cleanUsername = (username || '').toLowerCase().trim().replace(/\s/g, '')
   try {
     const { data, error } = await supabase
       .from('whitelist_users')
-      .update({ nama_mahasiswa: nama })
+      .update({ username: cleanUsername })
       .eq('email', emailLower)
       .select()
 
     if (!error && data && data.length > 0) {
-      saveLocalProfile(emailLower, { nama })
+      saveLocalProfile(emailLower, { username: cleanUsername })
       return { ok: true, via: 'db' }
     }
     throw error || new Error('Tidak ada baris yang diperbarui (RLS).')
   } catch (err) {
-    saveLocalProfile(emailLower, { nama })
+    saveLocalProfile(emailLower, { username: cleanUsername })
     return { ok: true, via: 'local', note: err?.message }
   }
 }
