@@ -223,6 +223,15 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
   const [newLinkPengumpulan, setNewLinkPengumpulan] = useState('')
   const [, setTick] = useState(0)
 
+  // Edit deadline modal state
+  const [isEditDeadlineModalOpen, setIsEditDeadlineModalOpen] = useState(false)
+  const [editingDeadlineId, setEditingDeadlineId] = useState(null)
+  const [editMatkul, setEditMatkul] = useState('')
+  const [editDeskripsi, setEditDeskripsi] = useState('')
+  const [editTanggalDeadline, setEditTanggalDeadline] = useState('')
+  const [editLinkPengumpulan, setEditLinkPengumpulan] = useState('')
+  const [submittingEditDeadline, setSubmittingEditDeadline] = useState(false)
+
   // Whitelist modal states (modal dibuka via menu profil di navbar)
   const [whitelistUsers, setWhitelistUsers] = useState([])
   const [loadingWhitelist, setLoadingWhitelist] = useState(false)
@@ -376,6 +385,91 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       alert(`Gagal membuat deadline: ${err.message}`)
     } finally {
       setSubmittingDeadline(false)
+    }
+  }
+
+  const formatDateTimeForInput = (isoStr) => {
+    if (!isoStr) return ''
+    const d = new Date(isoStr)
+    const pad = (n) => String(n).padStart(2, '0')
+    const year = d.getFullYear()
+    const month = pad(d.getMonth() + 1)
+    const day = pad(d.getDate())
+    const hours = pad(d.getHours())
+    const minutes = pad(d.getMinutes())
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  }
+
+  const handleEditDeadlineClick = (item) => {
+    if (userRole !== 'admin' && userRole !== 'owner') {
+      alert("Hanya admin dan owner yang memiliki izin untuk mengedit deadline.")
+      return
+    }
+    setEditingDeadlineId(item.id)
+    setEditMatkul(item.nama_matkul || '')
+    setEditDeskripsi(item.deskripsi_tugas || '')
+    setEditTanggalDeadline(formatDateTimeForInput(item.tanggal_deadline))
+    setEditLinkPengumpulan(item.link_pengumpulan || '')
+    setIsEditDeadlineModalOpen(true)
+  }
+
+  const handleUpdateDeadline = async (e) => {
+    e.preventDefault()
+    if (userRole !== 'admin' && userRole !== 'owner') {
+      alert("Hanya admin dan owner yang memiliki izin untuk mengedit deadline.")
+      return
+    }
+    if (!editMatkul.trim() || !editDeskripsi.trim() || !editTanggalDeadline) {
+      alert("Kolom Matkul, Deskripsi, dan Tanggal Tenggat wajib diisi!")
+      return
+    }
+
+    try {
+      setSubmittingEditDeadline(true)
+      const targetUtc = new Date(editTanggalDeadline).toISOString()
+      const updatedData = {
+        nama_matkul: editMatkul.trim(),
+        deskripsi_tugas: editDeskripsi.trim(),
+        tanggal_deadline: targetUtc,
+        link_pengumpulan: editLinkPengumpulan.trim() || null
+      }
+
+      const { error } = await supabase.from('class_deadlines').update(updatedData).eq('id', editingDeadlineId)
+
+      if (error && error.code === '42P01') {
+        setDeadlines(prev => prev.map(d => d.id === editingDeadlineId ? { ...d, ...updatedData } : d))
+      } else if (error) {
+        throw error
+      } else {
+        await fetchDeadlines()
+      }
+
+      setIsEditDeadlineModalOpen(false)
+      setEditingDeadlineId(null)
+    } catch (err) {
+      alert(`Gagal memperbarui deadline: ${err.message}`)
+    } finally {
+      setSubmittingEditDeadline(false)
+    }
+  }
+
+  const handleDeleteDeadline = async (id, matkul, deskripsi) => {
+    if (userRole !== 'admin' && userRole !== 'owner') {
+      alert("Hanya admin dan owner yang memiliki izin untuk menghapus deadline.")
+      return
+    }
+    if (!confirm(`Apakah Anda yakin ingin menghapus deadline "${matkul} - ${deskripsi}"?`)) return
+    try {
+      const { error } = await supabase.from('class_deadlines').delete().eq('id', id)
+      if (error && error.code === '42P01') {
+        setDeadlines(prev => prev.filter(d => d.id !== id))
+      } else if (error) {
+        throw error
+      } else {
+        await fetchDeadlines()
+      }
+    } catch (err) {
+      alert(`Gagal menghapus deadline: ${err.message}`)
     }
   }
 
@@ -638,17 +732,37 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                             {timeInfo.panicLevel === 'red' ? 'MENDESAK' : 'AMAN'}
                           </span>
                         </div>
-                        {item.link_pengumpulan && (
-                          <a 
-                            href={item.link_pengumpulan} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 text-xs font-mono text-zinc-200 transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-xs">link</span>
-                            <span>Kumpulkan</span>
-                          </a>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {item.link_pengumpulan && (
+                            <a 
+                              href={item.link_pengumpulan} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 text-xs font-mono text-zinc-200 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-xs">link</span>
+                              <span>Kumpulkan</span>
+                            </a>
+                          )}
+                          {(userRole === 'admin' || userRole === 'owner') && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleEditDeadlineClick(item)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 hover:border-amber-500/50 text-zinc-300 hover:text-amber-300 text-xs font-mono transition-colors cursor-pointer"
+                                title="Edit Deadline"
+                              >
+                                <span className="material-symbols-outlined text-xs">edit</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDeadline(item.id, item.nama_matkul, item.deskripsi_tugas)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-maroon-950/60 hover:bg-maroon-900 border border-maroon-800/60 hover:border-maroon-700 text-rose-300 text-xs font-mono transition-colors cursor-pointer"
+                                title="Hapus Deadline"
+                              >
+                                <span className="material-symbols-outlined text-xs">delete</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <h3 className="text-base font-semibold text-white">
@@ -964,6 +1078,106 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                   className="flex-1 py-2 rounded bg-maroon-800 text-white font-medium hover:bg-maroon-700"
                 >
                   {savingAgenda ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DEADLINE MODAL (ADMIN & OWNER ONLY) */}
+      {isEditDeadlineModalOpen && (userRole === 'admin' || userRole === 'owner') && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#11141c] border border-white/10 rounded-lg p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-base font-semibold text-white font-mono uppercase flex items-center gap-2">
+                <span className="material-symbols-outlined text-maroon-600">edit_calendar</span>
+                Edit Deadline Tugas
+              </h3>
+              <button
+                onClick={() => {
+                  setIsEditDeadlineModalOpen(false)
+                  setEditingDeadlineId(null)
+                }}
+                className="text-zinc-400 hover:text-white transition-colors text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateDeadline} className="flex flex-col gap-3 font-mono text-xs">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                  Nama Mata Kuliah *
+                </label>
+                <input
+                  type="text"
+                  value={editMatkul}
+                  onChange={(e) => setEditMatkul(e.target.value)}
+                  placeholder="Contoh: Pemrograman Web"
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                  Deskripsi Tugas *
+                </label>
+                <textarea
+                  value={editDeskripsi}
+                  onChange={(e) => setEditDeskripsi(e.target.value)}
+                  placeholder="Deskripsi tugas atau instruksi pengerjaan"
+                  rows="3"
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors resize-none"
+                  required
+                ></textarea>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                  Tenggat Waktu *
+                </label>
+                <input
+                  type="datetime-local"
+                  value={editTanggalDeadline}
+                  onChange={(e) => setEditTanggalDeadline(e.target.value)}
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-2 py-1.5 text-[11px] text-zinc-100 focus:outline-none focus:border-maroon-700 transition-colors"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                  Link Pengumpulan (Opsional)
+                </label>
+                <input
+                  type="url"
+                  value={editLinkPengumpulan}
+                  onChange={(e) => setEditLinkPengumpulan(e.target.value)}
+                  placeholder="https://classroom.google.com/..."
+                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditDeadlineModalOpen(false)
+                    setEditingDeadlineId(null)
+                  }}
+                  className="px-4 py-2 rounded bg-[#161a24] hover:bg-[#1f2533] text-zinc-300 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEditDeadline}
+                  className="px-4 py-2 rounded bg-maroon-800 hover:bg-maroon-700 text-white font-medium transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-xs">save</span>
+                  <span>{submittingEditDeadline ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
                 </button>
               </div>
             </form>

@@ -5,11 +5,12 @@ export default function GachaPage() {
   const [gachaMode, setGachaMode] = useState('presenter') // 'presenter' | 'groups' | 'custom'
   const [members, setMembers] = useState([])
   const [customInput, setCustomInput] = useState('')
-  const [groupSize, setGroupSize] = useState(4)
+  const [numGroups, setNumGroups] = useState(4)
   const [isSpinning, setIsSpinning] = useState(false)
   const [winnerResult, setWinnerResult] = useState(null)
   const [groupResults, setGroupResults] = useState([])
   const [history, setHistory] = useState([])
+  const [copiedWA, setCopiedWA] = useState(false)
 
   useEffect(() => {
     fetchClassMembers()
@@ -69,24 +70,56 @@ export default function GachaPage() {
     const list = [...members].sort(() => Math.random() - 0.5)
     if (list.length === 0) return
 
+    const totalGroups = Math.max(1, Math.min(numGroups, list.length))
+
     setIsSpinning(true)
     setGroupResults([])
 
     setTimeout(() => {
-      const resultGroups = []
-      for (let i = 0; i < list.length; i += groupSize) {
-        resultGroups.push(list.slice(i, i + groupSize))
-      }
+      // Create empty array of groups
+      const resultGroups = Array.from({ length: totalGroups }, () => [])
+      
+      // Distribute members evenly across groups
+      list.forEach((member, index) => {
+        resultGroups[index % totalGroups].push(member)
+      })
+
       setGroupResults(resultGroups)
       setIsSpinning(false)
 
       setHistory(prev => [{
         id: Date.now(),
         type: `Pembagian ${resultGroups.length} Kelompok`,
-        result: `${resultGroups.length} Kelompok Terbentuk`,
+        result: `${resultGroups.length} Kelompok Terbentuk (${list.length} Mahasiswa)`,
         timestamp: new Date().toLocaleTimeString('id-ID')
       }, ...prev])
     }, 2000)
+  }
+
+  const handleCopyWA = () => {
+    if (groupResults.length === 0) return
+
+    let text = `📢 *HASIL PEMBAGIAN KELOMPOK*\n`
+    text += `_Total: ${members.length} Mahasiswa • ${groupResults.length} Kelompok_\n`
+    text += `━━━━━━━━━━━━━━━━━━━━━\n\n`
+
+    groupResults.forEach((grp, idx) => {
+      text += `*📌 KELOMPOK ${idx + 1}* (${grp.length} Orang):\n`
+      grp.forEach((m, mIdx) => {
+        text += `${mIdx + 1}. ${m}\n`
+      })
+      text += `\n`
+    })
+
+    text = text.trimEnd()
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedWA(true)
+      setTimeout(() => setCopiedWA(false), 2500)
+    }).catch(err => {
+      console.error('Error copying text:', err)
+      alert("Gagal menyalin teks ke clipboard.")
+    })
   }
 
   return (
@@ -173,14 +206,39 @@ export default function GachaPage() {
                   <span className="text-xs font-mono text-zinc-500">🎉 Selamat & Semoga Berhasil!</span>
                 </div>
               ) : groupResults.length > 0 ? (
-                <div className="w-full text-left font-mono text-xs space-y-4 max-h-[300px] overflow-y-auto">
-                  <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest bg-[#10231b] px-3 py-1 rounded border border-emerald-500/30 inline-block mb-2">
-                    Hasil Pembagian {groupResults.length} Kelompok
-                  </span>
+                <div className="w-full text-left font-mono text-xs space-y-4 max-h-[320px] overflow-y-auto">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0b0e14]/95 backdrop-blur-xs z-10">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest bg-[#10231b] px-2.5 py-1 rounded border border-emerald-500/30">
+                        Hasil {groupResults.length} Kelompok
+                      </span>
+                      <span className="text-[11px] text-zinc-400">
+                        ({members.length} Mahasiswa)
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={handleCopyWA}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-mono text-xs transition-all cursor-pointer shadow-sm active:scale-95 ${
+                        copiedWA
+                          ? 'bg-emerald-600 text-white font-semibold'
+                          : 'bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300'
+                      }`}
+                      title="Salin hasil kelompok dalam format siap kirim WhatsApp"
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {copiedWA ? 'check' : 'content_copy'}
+                      </span>
+                      <span>{copiedWA ? 'Tersalin!' : 'Copy Format WA'}</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {groupResults.map((grp, idx) => (
-                      <div key={idx} className="bg-[#151922] p-3 rounded border border-white/10 space-y-1">
-                        <div className="font-bold text-rose-300">Kelompok {idx + 1}</div>
+                      <div key={idx} className="bg-[#151922] p-3 rounded border border-white/10 space-y-1.5">
+                        <div className="font-bold text-rose-300 flex items-center justify-between border-b border-white/5 pb-1">
+                          <span>Kelompok {idx + 1}</span>
+                          <span className="text-[10px] text-zinc-400 font-normal">{grp.length} Orang</span>
+                        </div>
                         <ul className="text-zinc-300 list-disc list-inside space-y-0.5">
                           {grp.map((m, mIdx) => (
                             <li key={mIdx} className="truncate">{m}</li>
@@ -202,17 +260,20 @@ export default function GachaPage() {
             {/* Controls */}
             {gachaMode === 'groups' ? (
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-lg font-mono text-xs">
-                <div className="flex items-center gap-2 bg-[#0b0e14] px-3 py-2 rounded border border-white/10 w-full sm:w-auto">
-                  <span className="text-zinc-400">Ukuran Kelompok:</span>
+                <div className="flex items-center gap-2 bg-[#0b0e14] px-3.5 py-2.5 rounded border border-white/10 w-full sm:w-auto">
+                  <span className="text-zinc-400">Dibagi menjadi:</span>
                   <input
                     type="number"
-                    min="2"
-                    max="10"
-                    value={groupSize}
-                    onChange={(e) => setGroupSize(parseInt(e.target.value) || 2)}
-                    className="w-12 bg-[#151922] border border-white/10 rounded text-center text-white py-0.5"
+                    min="1"
+                    max={members.length > 0 ? members.length : 50}
+                    value={numGroups}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value)
+                      setNumGroups(isNaN(val) || val < 1 ? 1 : val)
+                    }}
+                    className="w-14 bg-[#151922] border border-white/10 rounded text-center text-white py-1 focus:outline-none focus:border-maroon-700 font-semibold"
                   />
-                  <span className="text-zinc-500">Orang</span>
+                  <span className="text-zinc-400">Kelompok</span>
                 </div>
                 <button
                   onClick={handleGenerateGroups}
@@ -220,7 +281,7 @@ export default function GachaPage() {
                   className="flex-1 w-full py-3 px-6 rounded bg-[#991b1b] hover:bg-[#7f1d1d] active:bg-[#680007] text-white font-mono text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
                 >
                   <span className="material-symbols-outlined text-sm">casino</span>
-                  <span>Acak Pembagian Kelompok</span>
+                  <span>Acak {numGroups} Kelompok</span>
                 </button>
               </div>
             ) : (
