@@ -44,7 +44,7 @@ export default function HallOfFame({ userRole }) {
 
   const fetchCandidatesOnly = async () => {
     try {
-      const { data, error } = await supabase.from('awards_kandidat').select('*').order('nama_kandidat', { ascending: true })
+      const { data, error } = await supabase.from('awards_kandidat').select('*').order('vote_count', { ascending: false, nullsFirst: false })
       if (!error && data) setCandidates(data)
     } catch (e) { console.error(e) }
   }
@@ -66,7 +66,7 @@ export default function HallOfFame({ userRole }) {
       setLoading(true)
       setStatusMessage(null)
       const { data: katData, error: katError } = await supabase.from('awards_kategori').select('*').order('nama_kategori', { ascending: true })
-      const { data: kandData, error: kandError } = await supabase.from('awards_kandidat').select('*').order('nama_kandidat', { ascending: true })
+      const { data: kandData, error: kandError } = await supabase.from('awards_kandidat').select('*').order('vote_count', { ascending: false, nullsFirst: false })
       if ((katError && katError.code === '42P01') || (kandError && kandError.code === '42P01')) {
         setStatusMessage({ type: 'warning', text: 'Tabel awards_kategori atau awards_kandidat belum dibuat di database.' })
         setCategories([]); setCandidates([])
@@ -89,45 +89,50 @@ export default function HallOfFame({ userRole }) {
     const email = sessionRes?.data?.session?.user?.email?.toLowerCase()
     if (!email) { setStatusMessage({ type: 'error', text: 'Sesi login tidak ditemukan.' }); return }
 
-    const existingVote = myVotes.find(v => v.kategori_id === catId)
-
     try {
-      if (existingVote) {
-        // Cancel vote
-        if (existingVote.kandidat_id === candId) {
-          // Remove own vote
-          const { error: delError } = await supabase.from('awards_votes').delete().eq('voter_email', email).eq('kategori_id', catId)
-          if (delError) throw delError
-          const { error: decError } = await supabase.from('awards_kandidat').update({ vote_count: Math.max(0, (parseInt(candidate.vote_count) || 1) - 1) }).eq('id', candId)
-          if (decError) throw decError
-          setMyVotes(prev => prev.filter(v => !(v.kategori_id === catId && v.kandidat_id === candId)))
-          setStatusMessage({ type: 'success', text: 'Vote dibatalkan.' })
-          await fetchCandidatesOnly()
-          return
+      // Pakai RPC cast_hof_vote (bypass RLS + atomic update)
+      const { data: result, error } = await supabase.rpc('cast_hof_vote', {
+        p_kandidat_id: candId,
+        p_kategori_id: catId,
+        p_voter_email: email,
+      })
+
+      if (error) {
+        // Fallback direct query kalau RPC belum ada
+        if (error.message?.includes('function') || error.message?.includes('cast_hof_vote')) {
+          console.warn('RPC cast_hof_vote belum tersedia, pakai direct query...')
+          const existingVote = myVotes.find(v => v.kategori_id === catId)
+          if (existingVote) {
+            if (existingVote.kandidat_id === candId) {
+              await supabase.from('awards_votes').delete().eq('voter_email', email).eq('kategori_id', catId)
+              await supabase.from('awards_kandidat').update({ vote_count: Math.max(0, (parseInt(candidate.vote_count) || 1) - 1) }).eq('id', candId)
+              setMyVotes(prev => prev.filter(v => !(v.kategori_id === catId && v.kandidat_id === candId)))
+              setStatusMessage({ type: 'success', text: 'Vote dibatalkan.' })
+            } else {
+              const oldCandId = existingVote.kandidat_id
+              await supabase.from('awards_votes').delete().eq('voter_email', email).eq('kategori_id', catId)
+              await supabase.from('awards_kandidat').update({ vote_count: Math.max(0, (parseInt(candidates.find(c => c.id === oldCandId)?.vote_count) || 1) - 1) }).eq('id', oldCandId)
+              await supabase.from('awards_votes').insert([{ voter_email: email, kandidat_id: candId, kategori_id: catId }])
+              await supabase.from('awards_kandidat').update({ vote_count: (parseInt(candidate.vote_count) || 0) + 1 }).eq('id', candId)
+              setMyVotes(prev => prev.map(v => (v.kategori_id === catId ? { ...v, kandidat_id: candId } : v)))
+              setStatusMessage({ type: 'success', text: `Vote pindah ke ${candidate.nama_kandidat}!` })
+            }
+          } else {
+            await supabase.from('awards_votes').insert([{ voter_email: email, kandidat_id: candId, kategori_id: catId }])
+            await supabase.from('awards_kandidat').update({ vote_count: (parseInt(candidate.vote_count) || 0) + 1 }).eq('id', candId)
+            setMyVotes(prev => [...prev, { voter_email: email, kandidat_id: candId, kategori_id: catId }])
+            setStatusMessage({ type: 'success', text: `Berhasil memilih ${candidate.nama_kandidat}!` })
+          }
         } else {
-          // Switch vote to another candidate in same category
-          const oldCandId = existingVote.kandidat_id
-          const { error: delError } = await supabase.from('awards_votes').delete().eq('voter_email', email).eq('kategori_id', catId)
-          if (delError) throw delError
-          const { error: decOld } = await supabase.from('awards_kandidat').update({ vote_count: supabase.rpc('decrement_vote', { row_id: oldCandId }) }).eq('id', oldCandId)
-          // fallback manual decrement
-          await supabase.from('awards_kandidat').update({ vote_count: Math.max(0, (parseInt(candidates.find(c => c.id === oldCandId)?.vote_count) || 1) - 1) }).eq('id', oldCandId)
-          const { error: incNew } = await supabase.from('awards_kandidat').update({ vote_count: (parseInt(candidate.vote_count) || 0) + 1 }).eq('id', candId)
-          if (incNew) throw incNew
-          await supabase.from('awards_votes').insert([{ voter_email: email, kandidat_id: candId, kategori_id: catId }])
-          setMyVotes(prev => prev.map(v => (v.kategori_id === catId ? { ...v, kandidat_id: candId } : v)))
-          setStatusMessage({ type: 'success', text: `Vote pindah ke ${candidate.nama_kandidat}!` })
+          throw error
         }
       } else {
-        // New vote
-        const nextVote = (parseInt(candidate.vote_count) || 0) + 1
-        const { error: updError } = await supabase.from('awards_kandidat').update({ vote_count: nextVote }).eq('id', candId)
-        if (updError) throw updError
-        const { error: insError } = await supabase.from('awards_votes').insert([{ voter_email: email, kandidat_id: candId, kategori_id: catId }])
-        if (insError) throw insError
-        setMyVotes(prev => [...prev, { voter_email: email, kandidat_id: candId, kategori_id: catId }])
-        setStatusMessage({ type: 'success', text: `Berhasil memilih ${candidate.nama_kandidat}!` })
+        const msg = result === 'cancelled' ? 'Vote dibatalkan.'
+          : result === 'switched' ? `Vote pindah ke ${candidate.nama_kandidat}!`
+          : `Berhasil memilih ${candidate.nama_kandidat}!`
+        setStatusMessage({ type: 'success', text: msg })
       }
+
       await fetchCandidatesOnly()
       await fetchMyVotes()
     } catch (err) {

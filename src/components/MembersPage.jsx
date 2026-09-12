@@ -50,7 +50,7 @@ export default function MembersPage({ onBack }) {
               Daftar <span className="text-maroon-600">Anggota</span>
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-1">
-              Anggota kelas Sistem Informasi yang sudah mendaftar dan memiliki username di Besiuin Space.
+              Anggota kelas yang sudah terdaftar.
             </p>
           </div>
           {onBack && (

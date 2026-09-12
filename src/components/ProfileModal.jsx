@@ -9,7 +9,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [savingUsername, setSavingUsername] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const [status, setStatus] = useState(null) // { type: 'success'|'error', text }
+  const [errorMsg, setErrorMsg] = useState(null)
 
   // Password states (hidden by default)
   const [showPasswordForm, setShowPasswordForm] = useState(false)
@@ -38,20 +38,13 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
     if (!file) return
     try {
       setUploadingPhoto(true)
-      setStatus(null)
+      setErrorMsg(null)
       const dataUrl = await compressAvatar(file)
       const result = await updateProfilePhoto(userEmail, dataUrl)
-      const newFoto = result.url || dataUrl
-      setFoto(newFoto)
-      setStatus({
-        type: 'success',
-        text: result.via === 'db'
-          ? 'Foto profil berhasil diperbarui.'
-          : 'Foto profil tersimpan di perangkat ini.',
-      })
-      onProfileUpdated?.({ foto: newFoto })
+      setFoto(result.url)
+      onProfileUpdated?.({ foto: result.url })
     } catch (err) {
-      setStatus({ type: 'error', text: err.message || 'Gagal memproses foto.' })
+      setErrorMsg(err.message || 'Gagal mengunggah foto ke server.')
     } finally {
       setUploadingPhoto(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -62,18 +55,12 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
     e.preventDefault()
     if (!username.trim()) return
     setSavingUsername(true)
-    setStatus(null)
+    setErrorMsg(null)
     try {
-      const res = await updateProfileUsername(userEmail, username.trim())
-      setStatus({
-        type: 'success',
-        text: res.via === 'db'
-          ? 'Profil berhasil diperbarui di server.'
-          : 'Profil tersimpan sementara di perangkat ini.',
-      })
+      await updateProfileUsername(userEmail, username.trim())
       onProfileUpdated?.({ username: username.trim() })
     } catch (err) {
-      setStatus({ type: 'error', text: err.message || 'Gagal menyimpan profil.' })
+      setErrorMsg(err.message || 'Gagal menyimpan username ke server.')
     } finally {
       setSavingUsername(false)
     }
@@ -82,100 +69,95 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
   const handleUpdatePassword = async (e) => {
     e.preventDefault()
     if (newPassword.length < 6) {
-      setStatus({ type: 'error', text: 'Kata sandi baru minimal 6 karakter.' })
+      setErrorMsg('Kata sandi baru minimal 6 karakter.')
       return
     }
     if (newPassword !== confirmPassword) {
-      setStatus({ type: 'error', text: 'Konfirmasi kata sandi tidak cocok.' })
+      setErrorMsg('Konfirmasi kata sandi tidak cocok.')
       return
     }
 
     setSavingPassword(true)
-    setStatus(null)
+    setErrorMsg(null)
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) throw new Error(error.message)
-      setStatus({ type: 'success', text: 'Kata sandi berhasil diperbarui.' })
       setNewPassword('')
       setConfirmPassword('')
       setShowPasswordForm(false)
     } catch (err) {
-      setStatus({ type: 'error', text: err.message || 'Gagal memperbarui kata sandi.' })
+      setErrorMsg(err.message || 'Gagal memperbarui kata sandi.')
     } finally {
       setSavingPassword(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="relative bg-[#11141c] border border-white/10 rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
+        className="relative bg-[#11141c] border border-white/10 rounded-lg shadow-2xl w-full max-w-md sm:max-w-lg flex flex-col overflow-hidden max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 flex items-center justify-between shrink-0">
           <h2 className="text-sm font-semibold text-white font-mono uppercase tracking-wider flex items-center gap-2">
             <span className="material-symbols-outlined text-sm text-maroon-600">manage_accounts</span>
             Profil Saya
           </h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer p-1 -mr-1"
           >
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
-          {status && (
-            <div
-              className={`px-3 py-2 rounded text-xs font-mono flex items-start gap-2 border ${
-                status.type === 'success'
-                  ? 'bg-[#10231b] border-emerald-500/30 text-emerald-300'
-                  : 'bg-maroon-950/60 border-maroon-800 text-rose-300'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">
-                {status.type === 'success' ? 'check_circle' : 'error'}
-              </span>
-              <span>{status.text}</span>
+        <div className="p-4 sm:p-5 space-y-4 sm:space-y-5 overflow-y-auto">
+          {errorMsg && (
+            <div className="px-3 py-2.5 rounded text-xs font-mono flex items-start gap-2 border bg-maroon-950/60 border-maroon-800 text-rose-300">
+              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+              <span>{errorMsg}</span>
             </div>
           )}
 
           {loadingProfile ? (
-            <div className="text-center py-6">
+            <div className="text-center py-8 sm:py-10">
               <div className="w-5 h-5 border-2 border-zinc-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
               <p className="text-xs font-mono text-zinc-500">Memuat profil...</p>
             </div>
           ) : (
             <>
-              {/* Photo + Username */}
-              <div className="flex items-start gap-4">
+              {/* Photo + Username — stacked on mobile, horizontal on sm+ */}
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
                 <div className="shrink-0">
                   {foto ? (
-                    <img src={foto} alt="Foto profil" className="w-16 h-16 rounded-lg object-cover border border-white/15" />
+                    <img
+                      src={foto}
+                      alt="Foto profil"
+                      className="w-20 h-20 sm:w-16 sm:h-16 rounded-lg object-cover border border-white/15"
+                    />
                   ) : (
-                    <div className="w-16 h-16 rounded-lg bg-maroon-900/60 border border-maroon-800 flex items-center justify-center font-mono text-lg font-bold text-rose-200">
+                    <div className="w-20 h-20 sm:w-16 sm:h-16 rounded-lg bg-maroon-900/60 border border-maroon-800 flex items-center justify-center font-mono text-xl sm:text-lg font-bold text-rose-200">
                       {(username || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
                     </div>
                   )}
                 </div>
-                <div className="flex-1 min-w-0 space-y-3">
+                <div className="flex-1 min-w-0 w-full space-y-3 sm:space-y-3">
                   <div>
                     <p className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Username</p>
-                    <form onSubmit={handleSaveUsername} className="flex items-center gap-2 mt-1">
+                    <form onSubmit={handleSaveUsername} className="flex items-center gap-2 mt-1.5">
                       <input
                         type="text"
                         value={username}
                         onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
-                        className="flex-1 bg-[#0b0e14] border border-white/10 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-maroon-700 transition-colors"
+                        className="flex-1 bg-[#0b0e14] border border-white/10 rounded px-3 py-2.5 text-sm text-white focus:outline-none focus:border-maroon-700 transition-colors min-w-0"
                         placeholder="username_unik"
                       />
                       <button
                         type="submit"
                         disabled={savingUsername || !username.trim()}
-                        className="px-3 py-2 rounded bg-[#151922] hover:bg-[#1a202c] border border-white/10 hover:border-maroon-700 text-zinc-300 text-xs font-mono transition-colors cursor-pointer disabled:opacity-50"
+                        className="px-3 py-2.5 rounded bg-[#151922] hover:bg-[#1a202c] border border-white/10 hover:border-maroon-700 text-zinc-300 text-xs font-mono transition-colors cursor-pointer disabled:opacity-50 shrink-0"
                       >
                         {savingUsername ? '...' : 'Simpan'}
                       </button>
@@ -183,7 +165,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
                   </div>
 
                   <div>
-                    <p className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider mb-1">Foto Profil</p>
+                    <p className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider mb-1.5">Foto Profil</p>
                     <input
                       type="file"
                       accept="image/*"
@@ -199,7 +181,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
                       <span className="material-symbols-outlined text-sm">
                         {uploadingPhoto ? 'hourglass_top' : 'add_a_photo'}
                       </span>
-                      {uploadingPhoto ? 'Mengunggah...' : 'Ganti foto'}
+                      {uploadingPhoto ? 'Mengunggah ke server…' : 'Ganti foto'}
                     </button>
                   </div>
                 </div>
@@ -207,7 +189,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
 
               {/* Email Info */}
               <div className="bg-[#0b0e14] border border-white/10 rounded p-3 flex items-center gap-3">
-                <span className="material-symbols-outlined text-zinc-500 text-sm">mail</span>
+                <span className="material-symbols-outlined text-zinc-500 text-sm shrink-0">mail</span>
                 <div className="min-w-0">
                   <p className="text-xs text-zinc-300 truncate">{userEmail}</p>
                   <p className="text-[10px] font-mono text-zinc-500">Email terdaftar di kelas</p>
@@ -221,7 +203,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
                     type="button"
                     onClick={() => {
                       setShowPasswordForm(true)
-                      setStatus(null)
+                      setErrorMsg(null)
                     }}
                     className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
@@ -238,7 +220,7 @@ export default function ProfileModal({ userEmail, onClose, onProfileUpdated }) {
                           setShowPasswordForm(false)
                           setNewPassword('')
                           setConfirmPassword('')
-                          setStatus(null)
+                          setErrorMsg(null)
                         }}
                         className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
                       >
