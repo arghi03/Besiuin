@@ -220,6 +220,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
   const [newMatkul, setNewMatkul] = useState('')
   const [newDeskripsi, setNewDeskripsi] = useState('')
   const [newTanggalDeadline, setNewTanggalDeadline] = useState('')
+  const [newTempatPengumpulan, setNewTempatPengumpulan] = useState('')
   const [newLinkPengumpulan, setNewLinkPengumpulan] = useState('')
   const [, setTick] = useState(0)
 
@@ -229,6 +230,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
   const [editMatkul, setEditMatkul] = useState('')
   const [editDeskripsi, setEditDeskripsi] = useState('')
   const [editTanggalDeadline, setEditTanggalDeadline] = useState('')
+  const [editTempatPengumpulan, setEditTempatPengumpulan] = useState('')
   const [editLinkPengumpulan, setEditLinkPengumpulan] = useState('')
   const [submittingEditDeadline, setSubmittingEditDeadline] = useState(false)
 
@@ -366,6 +368,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         nama_matkul: newMatkul.trim(),
         deskripsi_tugas: newDeskripsi.trim(),
         tanggal_deadline: targetUtc,
+        tempat_pengumpulan: newTempatPengumpulan.trim() || 'TBA',
         link_pengumpulan: newLinkPengumpulan.trim() || null
       }
 
@@ -373,6 +376,18 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
       if (error && error.code === '42P01') {
         setDeadlines(prev => [...prev, { id: Date.now(), ...newDeadline }])
+      } else if (error && error.code === '42703') {
+        // Fallback jika kolom tempat_pengumpulan belum ditambahkan di Supabase
+        const { error: fallbackError } = await supabase.from('class_deadlines').insert([{
+          nama_matkul: newDeadline.nama_matkul,
+          deskripsi_tugas: newDeadline.deskripsi_tugas,
+          tanggal_deadline: newDeadline.tanggal_deadline,
+          link_pengumpulan: newDeadline.link_pengumpulan
+        }])
+        if (fallbackError) throw fallbackError
+        await fetchDeadlines()
+      } else if (error) {
+        throw error
       } else {
         await fetchDeadlines()
       }
@@ -380,6 +395,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       setNewMatkul('')
       setNewDeskripsi('')
       setNewTanggalDeadline('')
+      setNewTempatPengumpulan('')
       setNewLinkPengumpulan('')
     } catch (err) {
       alert(`Gagal membuat deadline: ${err.message}`)
@@ -409,6 +425,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
     setEditMatkul(item.nama_matkul || '')
     setEditDeskripsi(item.deskripsi_tugas || '')
     setEditTanggalDeadline(formatDateTimeForInput(item.tanggal_deadline))
+    setEditTempatPengumpulan(item.tempat_pengumpulan || '')
     setEditLinkPengumpulan(item.link_pengumpulan || '')
     setIsEditDeadlineModalOpen(true)
   }
@@ -431,6 +448,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         nama_matkul: editMatkul.trim(),
         deskripsi_tugas: editDeskripsi.trim(),
         tanggal_deadline: targetUtc,
+        tempat_pengumpulan: editTempatPengumpulan.trim() || 'TBA',
         link_pengumpulan: editLinkPengumpulan.trim() || null
       }
 
@@ -438,6 +456,16 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
       if (error && error.code === '42P01') {
         setDeadlines(prev => prev.map(d => d.id === editingDeadlineId ? { ...d, ...updatedData } : d))
+      } else if (error && error.code === '42703') {
+        // Fallback jika kolom tempat_pengumpulan belum ada di database
+        const { error: fallbackError } = await supabase.from('class_deadlines').update({
+          nama_matkul: updatedData.nama_matkul,
+          deskripsi_tugas: updatedData.deskripsi_tugas,
+          tanggal_deadline: updatedData.tanggal_deadline,
+          link_pengumpulan: updatedData.link_pengumpulan
+        }).eq('id', editingDeadlineId)
+        if (fallbackError) throw fallbackError
+        await fetchDeadlines()
       } else if (error) {
         throw error
       } else {
@@ -475,7 +503,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
   const getDeadlineTimeInfo = (targetDateStr) => {
     const diff = new Date(targetDateStr) - new Date()
-    if (diff <= 0) return { expired: true, text: 'Sudah lewat', panicLevel: 'expired' }
+    if (diff <= 0) return { expired: true, text: 'Sudah lewat', panicLevel: 'red', label: 'Waktu Habis!' }
 
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24)
@@ -486,11 +514,25 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
     if (hours > 0 || days > 0) text += `${hours} Jam `
     text += `${minutes} Menit`
 
+    const hoursTotal = diff / (1000 * 60 * 60)
     let panicLevel = 'green'
-    if (diff < 1000 * 60 * 60 * 24) panicLevel = 'red'
-    else if (diff < 1000 * 60 * 60 * 24 * 3) panicLevel = 'yellow'
+    let label = 'Aman'
 
-    return { expired: false, text, panicLevel }
+    if (hoursTotal < 2) {
+      // Merah: < 2 Jam
+      panicLevel = 'red'
+      label = 'Cemas kau dekkkk!!!'
+    } else if (hoursTotal <= 24) {
+      // Kuning: <= 24 Jam sampai >= 2 Jam
+      panicLevel = 'yellow'
+      label = 'Kerjain woy!'
+    } else {
+      // Hijau: > 24 Jam (1 Hari)
+      panicLevel = 'green'
+      label = 'Aman'
+    }
+
+    return { expired: false, text, panicLevel, label }
   }
 
   const pad = (n) => String(n).padStart(2, '0')
@@ -523,7 +565,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
               Welcome To <span className="text-maroon-600">Besiuin Space</span>
             </h1>
             <p className="text-zinc-400 text-sm max-w-xl leading-relaxed mt-2">
-              Tempat berkeluh kesah, seru-seruan, dan pengingat deadline akademik kelas Sistem Informasi dalam satu atap.
+              Tempat nampung keluh kesah, arsip momen random, dan alarm tugas biar gak kebantai deadline.
             </p>
           </div>
         </section>
@@ -723,13 +765,21 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                           <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[11px] text-zinc-200">
                             {item.nama_matkul}
                           </span>
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] uppercase ${
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-mono text-[11px] font-medium tracking-wide ${
                             timeInfo.panicLevel === 'red' 
-                              ? 'bg-maroon-950/80 border border-maroon-700 text-rose-300' 
-                              : 'bg-[#10231b] border border-emerald-500/30 text-emerald-400'
+                              ? 'bg-maroon-950/90 border border-rose-600/60 text-rose-200' 
+                              : timeInfo.panicLevel === 'yellow'
+                              ? 'bg-amber-950/80 border border-amber-500/50 text-amber-300'
+                              : 'bg-[#10231b] border border-emerald-500/40 text-emerald-400'
                           }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${timeInfo.panicLevel === 'red' ? 'bg-rose-400 animate-ping' : 'bg-emerald-400'}`}></span>
-                            {timeInfo.panicLevel === 'red' ? 'MENDESAK' : 'AMAN'}
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              timeInfo.panicLevel === 'red' 
+                                ? 'bg-rose-500 animate-ping' 
+                                : timeInfo.panicLevel === 'yellow'
+                                ? 'bg-amber-400'
+                                : 'bg-emerald-400'
+                            }`}></span>
+                            <span>{timeInfo.label}</span>
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -775,7 +825,9 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                           <span>Sisa Waktu:</span>
                           <span className="text-rose-300 font-medium">{timeInfo.text}</span>
                         </div>
-                        <span className="text-[10px] text-zinc-500">Google Classroom</span>
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          {item.tempat_pengumpulan && item.tempat_pengumpulan !== 'TBA' ? item.tempat_pengumpulan : 'TBA (Belum ada info)'}
+                        </span>
                       </div>
                     </div>
                   )
@@ -827,7 +879,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
-                      Tenggat Waktu
+                      Tenggat Waktu *
                     </label>
                     <input
                       type="datetime-local"
@@ -840,16 +892,29 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
-                      Link Pengumpulan
+                      Tempat Pengumpulan
                     </label>
                     <input
-                      type="url"
-                      value={newLinkPengumpulan}
-                      onChange={(e) => setNewLinkPengumpulan(e.target.value)}
-                      placeholder="https://classroom..."
+                      type="text"
+                      value={newTempatPengumpulan}
+                      onChange={(e) => setNewTempatPengumpulan(e.target.value)}
+                      placeholder="Google Classroom / LMS / Di Kelas"
                       className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-1.5 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
                     />
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
+                    Link Pengumpulan (Opsional)
+                  </label>
+                  <input
+                    type="url"
+                    value={newLinkPengumpulan}
+                    onChange={(e) => setNewLinkPengumpulan(e.target.value)}
+                    placeholder="https://classroom.google.com/..."
+                    className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-1.5 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+                  />
                 </div>
 
                 <button
@@ -1134,17 +1199,32 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                 ></textarea>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
-                  Tenggat Waktu *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={editTanggalDeadline}
-                  onChange={(e) => setEditTanggalDeadline(e.target.value)}
-                  className="w-full bg-[#0b0e14] border border-white/10 rounded px-2 py-1.5 text-[11px] text-zinc-100 focus:outline-none focus:border-maroon-700 transition-colors"
-                  required
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                    Tenggat Waktu *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editTanggalDeadline}
+                    onChange={(e) => setEditTanggalDeadline(e.target.value)}
+                    className="w-full bg-[#0b0e14] border border-white/10 rounded px-2 py-1.5 text-[11px] text-zinc-100 focus:outline-none focus:border-maroon-700 transition-colors"
+                    required
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-zinc-400 uppercase tracking-wider">
+                    Tempat Pengumpulan
+                  </label>
+                  <input
+                    type="text"
+                    value={editTempatPengumpulan}
+                    onChange={(e) => setEditTempatPengumpulan(e.target.value)}
+                    placeholder="Google Classroom / LMS / Di Kelas"
+                    className="w-full bg-[#0b0e14] border border-white/10 rounded px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-maroon-700 transition-colors"
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-1">

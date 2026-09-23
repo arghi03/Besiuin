@@ -23,53 +23,66 @@ export default function LoginPage() {
     let resolvedUsername = ''
 
     try {
-      // Allow username login: if input doesn't contain '@', treat as username
-      if (!trimmedEmail.includes('@')) {
-        resolvedUsername = trimmedEmail
+      // 1. Resolve username/email via secure backend RPC
+      let whitelistUser = null
+      try {
+        const { data: rpcData, error: rpcError } = await supabase
+          .rpc('check_login_whitelist', { p_input: rawInput })
+        if (!rpcError && rpcData && rpcData.length > 0) {
+          whitelistUser = rpcData[0]
+          trimmedEmail = whitelistUser.found_email || whitelistUser.email
+        }
+      } catch {
+        // Silently continue to fallback
+      }
 
-        // 1) Look up email by username
-        const { data: byUsername } = await supabase
-          .from('whitelist_users')
-          .select('email')
-          .eq('username', resolvedUsername)
-          .maybeSingle()
+      // Fallback: direct table lookup if RPC is not yet executed
+      if (!whitelistUser) {
+        if (!trimmedEmail.includes('@')) {
+          resolvedUsername = trimmedEmail
 
-        if (byUsername?.email) {
-          trimmedEmail = byUsername.email
-        } else {
-          // 2) Fallback: look up by email prefix
-          const usernamePrefix = resolvedUsername
-          trimmedEmail = `${usernamePrefix}@mhs.uinjkt.ac.id`
-
-          const { data: whitelistUser } = await supabase
+          const { data: byUsername } = await supabase
             .from('whitelist_users')
             .select('email')
-            .ilike('email', `${usernamePrefix}@%`)
+            .eq('username', resolvedUsername)
             .maybeSingle()
 
-          if (whitelistUser?.email) {
-            trimmedEmail = whitelistUser.email
+          if (byUsername?.email) {
+            trimmedEmail = byUsername.email
+          } else {
+            const usernamePrefix = resolvedUsername
+            trimmedEmail = `${usernamePrefix}@mhs.uinjkt.ac.id`
+
+            const { data: userByPrefix } = await supabase
+              .from('whitelist_users')
+              .select('email')
+              .ilike('email', `${usernamePrefix}@%`)
+              .maybeSingle()
+
+            if (userByPrefix?.email) {
+              trimmedEmail = userByPrefix.email
+            }
           }
+        }
+
+        const { data: whitelist } = await supabase
+          .from('whitelist_users')
+          .select('email, role, nama_mahasiswa, username')
+          .eq('email', trimmedEmail)
+          .maybeSingle()
+
+        if (whitelist) {
+          whitelistUser = { found_email: whitelist.email, ...whitelist }
         }
       }
 
-      // 1. Check UIN Jakarta Student Email Domain
+      // 2. Check UIN Jakarta Student Email Domain
       if (!trimmedEmail.endsWith('@mhs.uinjkt.ac.id')) {
         throw new Error('Akses Ditolak! Anda harus menggunakan email resmi mahasiswa UIN Jakarta (@mhs.uinjkt.ac.id) atau username terdaftar.')
       }
 
-      // 2. Check Whitelist Table
-      const { data: whitelist, error: whitelistError } = await supabase
-        .from('whitelist_users')
-        .select('email, role, nama_mahasiswa, username')
-        .eq('email', trimmedEmail)
-        .maybeSingle()
-
-      if (whitelistError) {
-        throw new Error(`Gagal memverifikasi whitelist: ${whitelistError.message}`)
-      }
-
-      if (!whitelist) {
+      // 3. Verify whitelist presence
+      if (!whitelistUser) {
         throw new Error('Username / Email Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi.')
       }
 
