@@ -81,55 +81,92 @@ export default function LoginPage() {
         throw new Error('Akses Ditolak! Anda harus menggunakan email resmi mahasiswa UIN Jakarta (@mhs.uinjkt.ac.id) atau username terdaftar.')
       }
 
-      // 3. Verify whitelist presence
-      if (!whitelistUser) {
-        throw new Error('Username / Email Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi.')
-      }
+      if (authMode === 'forgot') {
+        // Send Password Reset Email directly via Supabase Auth
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+          redirectTo: `${window.location.origin}/`,
+        })
 
-        if (loginError) {
+        if (resetError) {
           if (
-            loginError.message.toLowerCase().includes('invalid login credentials') ||
-            loginError.status === 400
+            resetError.message.toLowerCase().includes('not found') ||
+            resetError.message.toLowerCase().includes('user not found')
           ) {
-            throw new Error('Email/Username atau kata sandi salah. Jika lupa kata sandi, silakan klik "Lupa kata sandi?".')
+            throw new Error('Email tidak terdaftar di sistem akun. Pastikan Anda sudah pernah mendaftar akun.')
           }
-          throw new Error(loginError.message)
+          throw new Error(resetError.message || 'Gagal mengirim tautan reset.')
         }
 
-        if (!loginData.session) {
-          throw new Error('Gagal membuat sesi login.')
-        }
+        setAuthSuccess(`Tautan reset kata sandi telah dikirim ke ${trimmedEmail}. Silakan periksa kotak masuk atau spam email kampus Anda.`)
+      } else if (authMode === 'login') {
+        // 3. Verify whitelist presence if already resolved
+        if (!whitelistUser) {
+          // If not resolved anonymously, attempt sign in first, then verify with authenticated token
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password: password,
+          })
 
-        // Verify whitelist after authentication (runs with authenticated JWT role)
-        const { data: whitelist, error: whitelistError } = await supabase
-          .from('whitelist_users')
-          .select('email, role, nama_mahasiswa, username')
-          .ilike('email', trimmedEmail)
-          .maybeSingle()
+          if (loginError) {
+            if (
+              loginError.message.toLowerCase().includes('invalid login credentials') ||
+              loginError.status === 400
+            ) {
+              throw new Error('Email/Username atau kata sandi salah. Jika lupa kata sandi, silakan klik "Lupa kata sandi?".')
+            }
+            throw new Error(loginError.message)
+          }
 
-        if (whitelistError) {
-          console.warn('Gagal memverifikasi whitelist:', whitelistError.message)
-        }
+          if (!loginData.session) {
+            throw new Error('Gagal membuat sesi login.')
+          }
 
-        if (!whitelist && !whitelistError) {
-          // If explicitly not in whitelist, sign out and reject access
-          await supabase.auth.signOut()
-          throw new Error('Akses Ditolak! Akun Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi. Silakan hubungi admin kelas.')
+          // Verify whitelist after authentication (runs with authenticated JWT role)
+          const { data: whitelist, error: whitelistError } = await supabase
+            .from('whitelist_users')
+            .select('email, role, nama_mahasiswa, username')
+            .ilike('email', trimmedEmail)
+            .maybeSingle()
+
+          if (!whitelist && !whitelistError) {
+            await supabase.auth.signOut()
+            throw new Error('Akses Ditolak! Akun Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi. Silakan hubungi admin kelas.')
+          }
+        } else {
+          // User already confirmed in whitelist, proceed with login
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password: password,
+          })
+
+          if (loginError) {
+            if (
+              loginError.message.toLowerCase().includes('invalid login credentials') ||
+              loginError.status === 400
+            ) {
+              throw new Error('Email/Username atau kata sandi salah. Jika lupa kata sandi, silakan klik "Lupa kata sandi?".')
+            }
+            throw new Error(loginError.message)
+          }
+
+          if (!loginData.session) {
+            throw new Error('Gagal membuat sesi login.')
+          }
         }
       } else if (authMode === 'signup') {
         // Check Whitelist Table: Only students on the whitelist can sign up
-        const { data: whitelist, error: whitelistError } = await supabase
-          .from('whitelist_users')
-          .select('email, role, nama_mahasiswa, username')
-          .ilike('email', trimmedEmail)
-          .maybeSingle()
+        if (!whitelistUser) {
+          const { data: whitelist, error: whitelistError } = await supabase
+            .from('whitelist_users')
+            .select('email, role, nama_mahasiswa, username')
+            .ilike('email', trimmedEmail)
+            .maybeSingle()
 
-        if (whitelistError) {
-          console.warn('Gagal memverifikasi whitelist:', whitelistError.message)
-        }
-
-        if (!whitelist && !whitelistError) {
-          throw new Error('Email Anda belum terdaftar dalam whitelist anggota Kelas Sistem Informasi. Hubungi admin kelas untuk didaftarkan.')
+          if (whitelist) {
+            whitelistUser = whitelist
+          } else if (!whitelistError) {
+            throw new Error('Email Anda belum terdaftar dalam whitelist anggota Kelas Sistem Informasi. Hubungi admin kelas untuk didaftarkan.')
+          }
         }
 
         const { error: signUpError } = await supabase.auth.signUp({
