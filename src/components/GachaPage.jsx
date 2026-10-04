@@ -157,7 +157,7 @@ export default function GachaPage() {
             }`}
           >
             <span className="material-symbols-outlined text-sm">person_search</span>
-            <span>Presenter Pick</span>
+            <span>1 Member Pick</span>
           </button>
 
           <button
