@@ -64,7 +64,7 @@ function App() {
         const { data, error } = await supabase
           .from('whitelist_users')
           .select('role')
-          .eq('email', email)
+          .ilike('email', email)
           .maybeSingle()
 
         if (!error && data && data.role) {
