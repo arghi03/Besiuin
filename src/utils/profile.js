@@ -18,7 +18,7 @@ export async function fetchProfile(email) {
     const { data, error } = await supabase
       .from('whitelist_users')
       .select('username, foto_url')
-      .eq('email', emailLower)
+      .ilike('email', emailLower)
       .maybeSingle()
 
     if (error) throw error
@@ -53,7 +53,7 @@ export async function updateProfileUsername(email, username) {
       const { error: directError } = await supabase
         .from('whitelist_users')
         .update({ username: cleanUsername })
-        .eq('email', emailLower)
+        .ilike('email', emailLower)
 
       if (directError) {
         throw new Error(
@@ -103,7 +103,7 @@ export async function updateProfilePhoto(email, fotoDataUrl) {
       const { error: directError } = await supabase
         .from('whitelist_users')
         .update({ foto_url: publicUrl })
-        .eq('email', emailLower)
+        .ilike('email', emailLower)
 
       if (directError) {
         throw new Error(

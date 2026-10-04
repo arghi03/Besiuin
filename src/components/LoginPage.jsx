@@ -86,49 +86,68 @@ export default function LoginPage() {
         throw new Error('Username / Email Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi.')
       }
 
-      if (authMode === 'login' || authMode === 'forgot') {
-        if (authMode === 'forgot') {
-          // Send Password Reset Email
-          const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-            redirectTo: `${window.location.origin}/`,
-          })
-          if (resetError) {
-            throw new Error(resetError.message || 'Gagal mengirim tautan reset.')
+        if (loginError) {
+          if (
+            loginError.message.toLowerCase().includes('invalid login credentials') ||
+            loginError.status === 400
+          ) {
+            throw new Error('Email/Username atau kata sandi salah. Jika lupa kata sandi, silakan klik "Lupa kata sandi?".')
           }
-          setAuthSuccess('Tautan reset kata sandi telah dikirim ke email kampus Anda.')
-        } else {
-          // Login
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-            email: trimmedEmail,
-            password: password,
-          })
-          if (loginError) {
-            if (loginError.message.toLowerCase().includes('invalid login credentials')) {
-              throw new Error('Kata sandi salah. Jika lupa, klik "Lupa kata sandi?".')
-            }
-            throw new Error(loginError.message)
-          }
-          if (!loginData.session) {
-            throw new Error('Gagal membuat sesi login.')
-          }
+          throw new Error(loginError.message)
+        }
+
+        if (!loginData.session) {
+          throw new Error('Gagal membuat sesi login.')
+        }
+
+        // Verify whitelist after authentication (runs with authenticated JWT role)
+        const { data: whitelist, error: whitelistError } = await supabase
+          .from('whitelist_users')
+          .select('email, role, nama_mahasiswa, username')
+          .ilike('email', trimmedEmail)
+          .maybeSingle()
+
+        if (whitelistError) {
+          console.warn('Gagal memverifikasi whitelist:', whitelistError.message)
+        }
+
+        if (!whitelist && !whitelistError) {
+          // If explicitly not in whitelist, sign out and reject access
+          await supabase.auth.signOut()
+          throw new Error('Akses Ditolak! Akun Anda tidak terdaftar sebagai anggota Kelas Sistem Informasi. Silakan hubungi admin kelas.')
         }
       } else if (authMode === 'signup') {
-        // Prevent duplicate registrations
-        const { data: existingUser } = await supabase.auth.admin?.listUsers
-        // Use auth.getUser with the email to check if user already exists (simpler approach: try signUp and catch error)
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        // Check Whitelist Table: Only students on the whitelist can sign up
+        const { data: whitelist, error: whitelistError } = await supabase
+          .from('whitelist_users')
+          .select('email, role, nama_mahasiswa, username')
+          .ilike('email', trimmedEmail)
+          .maybeSingle()
+
+        if (whitelistError) {
+          console.warn('Gagal memverifikasi whitelist:', whitelistError.message)
+        }
+
+        if (!whitelist && !whitelistError) {
+          throw new Error('Email Anda belum terdaftar dalam whitelist anggota Kelas Sistem Informasi. Hubungi admin kelas untuk didaftarkan.')
+        }
+
+        const { error: signUpError } = await supabase.auth.signUp({
           email: trimmedEmail,
           password: password,
         })
 
         if (signUpError) {
-          if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
-            throw new Error('Email ini sudah terdaftar. Silakan login atau gunakan lupa kata sandi.')
+          if (
+            signUpError.message.includes('already registered') ||
+            signUpError.message.includes('User already registered')
+          ) {
+            throw new Error('Email ini sudah terdaftar. Silakan masuk atau gunakan fitur "Lupa kata sandi?".')
           }
           throw new Error(signUpError.message)
         }
 
-        // Update whitelist username on signup
+        // Update whitelist username on signup if provided
         const updatePayload = {}
         if (signupUsername.trim()) updatePayload.username = signupUsername.trim().toLowerCase()
 
@@ -136,10 +155,10 @@ export default function LoginPage() {
           await supabase
             .from('whitelist_users')
             .update(updatePayload)
-            .eq('email', trimmedEmail)
+            .ilike('email', trimmedEmail)
         }
 
-        setAuthSuccess('Akun berhasil dibuat! Silakan verifikasi email kampus Anda untuk mengaktifkan akun.')
+        setAuthSuccess('Akun berhasil dibuat! Silakan verifikasi email kampus Anda atau langsung masuk.')
       }
     } catch (err) {
       setAuthError(err.message || 'Terjadi kesalahan tak terduga.')
