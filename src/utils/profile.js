@@ -19,7 +19,7 @@ export async function fetchProfile(email) {
     const { data, error } = await supabase
       .from('whitelist_users')
       .select('username, foto_url')
-      .eq('email', emailLower)
+      .ilike('email', emailLower)
       .maybeSingle()
 
     if (error) throw error
