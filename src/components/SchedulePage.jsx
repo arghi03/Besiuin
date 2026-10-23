@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
+import { sanitizeUrl } from '../utils/security'
 
 export default function SchedulePage({ onBack, userRole }) {
   const [schedules, setSchedules] = useState([])
@@ -93,7 +95,7 @@ export default function SchedulePage({ onBack, userRole }) {
         ruangan: ruangan.trim() || 'TBA',
         nama_dosen: namaDosen.trim(),
         semester: parseInt(semesterInput),
-        link_kelas: linkKelas.trim() || null,
+        link_kelas: sanitizeUrl(linkKelas) || null,
         pj_matkul: pjMatkul.trim()
       }
 
@@ -125,7 +127,7 @@ export default function SchedulePage({ onBack, userRole }) {
       setEditingScheduleId(null)
       setIsFormModalOpen(false)
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menyimpan jadwal: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menyimpan jadwal.') })
     } finally {
       setSubmitting(false)
     }
@@ -142,7 +144,7 @@ export default function SchedulePage({ onBack, userRole }) {
         await fetchSchedules()
       }
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menghapus jadwal: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menghapus jadwal.') })
     }
   }
 
@@ -301,9 +303,9 @@ export default function SchedulePage({ onBack, userRole }) {
                           </div>
 
                           <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                            {cls.link_kelas ? (
+                            {sanitizeUrl(cls.link_kelas) ? (
                               <a
-                                href={cls.link_kelas}
+                                href={sanitizeUrl(cls.link_kelas)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors"

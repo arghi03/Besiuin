@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
 
 export default function QuotesPage({ userRole }) {
   const [quotes, setQuotes] = useState([])
@@ -162,7 +163,7 @@ export default function QuotesPage({ userRole }) {
       // await fetchQuotes(false)
     } catch (err) {
       console.error('Error liking quote:', err)
-      alert(err.message || 'Gagal memproses like. Pastikan SQL migration sudah di-run di Supabase.')
+      alert(getFriendlyErrorMessage(err, 'Gagal memproses like.'))
     }
   }
 
@@ -194,7 +195,7 @@ export default function QuotesPage({ userRole }) {
       setContextText('')
       setIsModalOpen(false)
     } catch (err) {
-      alert(`Gagal menambah quote: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal menambah quote.'))
     } finally {
       setSubmitting(false)
     }
@@ -209,7 +210,7 @@ export default function QuotesPage({ userRole }) {
       if (error) throw error
       setQuotes(prev => prev.filter(q => q.id !== id))
     } catch (err) {
-      alert(`Gagal menghapus quote: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal menghapus quote.'))
     }
   }
 

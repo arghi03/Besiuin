@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './config/supabaseClient'
 import Dashboard from './components/Dashboard'
 import QuotesPage from './components/QuotesPage'
@@ -26,30 +26,77 @@ function App() {
   // Profile state (nama tampilan + foto + username)
   const [userName, setUserName] = useState('')
   const [profilePhoto, setProfilePhoto] = useState(null)
+  const lastUserIdRef = useRef(null)
 
-  useEffect(() => {
-    // 1. Get initial active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+  // Sinkronisasi role dan profil pengguna secara senyap di background (tanpa unmount/reload UI)
+  const syncUserData = useCallback(async (email) => {
+    if (!email) {
+      setUserRole('member')
+      setUserName('')
+      setProfilePhoto(null)
+      return
+    }
 
-    // 2. Listen for auth changes (Login, Logout, Token Refreshed, Password Recovery)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session)
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsResetPasswordOpen(true)
+    const emailLower = email.trim().toLowerCase()
+
+    try {
+      const { data, error } = await supabase
+        .from('whitelist_users')
+        .select('role')
+        .eq('email', emailLower)
+        .maybeSingle()
+
+      if (!error && data && data.role) {
+        setUserRole(data.role)
+      } else {
+        setUserRole('member')
       }
-    })
+    } catch (err) {
+      console.error('Error fetching user role:', err)
+      setUserRole('member')
+    }
 
-    return () => {
-      subscription.unsubscribe()
+    try {
+      const profile = await fetchProfile(emailLower)
+      setUserName(profile.username || emailLower.split('@')[0])
+      setProfilePhoto(profile.foto || null)
+    } catch (err) {
+      console.error('Error fetching profile:', err)
     }
   }, [])
 
-  // Fetch user role + profile whenever session changes
   useEffect(() => {
-    const fetchUserRole = async () => {
-      if (!session || !session.user || !session.user.email) {
+    let isMounted = true
+
+    // 1. Initial cold-start check: Hanya saat web pertama kali dibuka
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+      if (!isMounted) return
+
+      if (initialSession?.user?.email) {
+        lastUserIdRef.current = initialSession.user.id
+        setSession(initialSession)
+        await syncUserData(initialSession.user.email)
+      } else {
+        setSession(null)
+      }
+
+      if (isMounted) setLoading(false)
+    }).catch(() => {
+      if (isMounted) setLoading(false)
+    })
+
+    // 2. Auth listener: Mendeteksi login, logout, atau token refresh saat ganti tab
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!isMounted) return
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsResetPasswordOpen(true)
+      }
+
+      // Kasus: User Logout
+      if (event === 'SIGNED_OUT' || !newSession) {
+        lastUserIdRef.current = null
+        setSession(null)
         setUserRole('member')
         setUserName('')
         setProfilePhoto(null)
@@ -57,36 +104,25 @@ function App() {
         return
       }
 
-      const email = session.user.email.trim().toLowerCase()
+      const previousUserId = lastUserIdRef.current
+      const currentUserId = newSession.user?.id
+      lastUserIdRef.current = currentUserId
+      setSession(newSession)
 
-      try {
-        setLoading(true)
-        const { data, error } = await supabase
-          .from('whitelist_users')
-          .select('role')
-          .eq('email', email)
-          .maybeSingle()
-
-        if (!error && data && data.role) {
-          setUserRole(data.role)
-        } else {
-          setUserRole('member')
-        }
-      } catch (err) {
-        console.error('Error fetching user role:', err)
-        setUserRole('member')
-      } finally {
-        setLoading(false)
+      // Jika user baru login (berganti user ID), muat profilnya
+      if (previousUserId !== currentUserId && newSession.user?.email) {
+        await syncUserData(newSession.user.email)
       }
 
-      // Load profil (username + foto)
-      const profile = await fetchProfile(email)
-      setUserName(profile.username || email.split('@')[0])
-      setProfilePhoto(profile.foto || null)
-    }
+      // Pastikan loading awal selalu selesai, dan JANGAN set loading(true) lagi
+      setLoading(false)
+    })
 
-    fetchUserRole()
-  }, [session])
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [syncUserData])
 
   // Dipanggil dari ProfileModal saat profil berubah
   const handleProfileUpdated = useCallback((patch) => {

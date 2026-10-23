@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../config/supabaseClient'
 import { compressAvatar } from '../utils/image'
 import { uploadToStorage } from '../utils/storage'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
 
 export default function HallOfFame({ userRole }) {
   const [activeTab, setActiveTab] = useState('vote') // 'vote' | 'leaderboard' | 'manage'
@@ -136,7 +137,7 @@ export default function HallOfFame({ userRole }) {
       await fetchCandidatesOnly()
       await fetchMyVotes()
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal vote: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal memproses vote.') })
     }
   }
 
@@ -156,7 +157,7 @@ export default function HallOfFame({ userRole }) {
         await fetchData()
       }
       setNewKategori('')
-    } catch (err) { setStatusMessage({ type: 'error', text: `Gagal membuat kategori: ${err.message}` }) }
+    } catch (err) { setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal membuat kategori.') }) }
     finally { setSubmittingKategori(false) }
   }
 
@@ -191,7 +192,7 @@ export default function HallOfFame({ userRole }) {
         else throw error
       } else { setStatusMessage({ type: 'success', text: 'Kandidat baru berhasil ditambahkan!' }); await fetchData() }
       setNewKandidatNama(''); setNewKandidatFoto(null)
-    } catch (err) { setStatusMessage({ type: 'error', text: `Gagal membuat kandidat: ${err.message}` }) }
+    } catch (err) { setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal membuat kandidat.') }) }
     finally { setSubmittingKandidat(false) }
   }
 
@@ -216,7 +217,7 @@ export default function HallOfFame({ userRole }) {
       setMyVotes(prev => prev.filter(v => !candidates.find(c => c.id === v.kandidat_id && c.kategori_id === id)))
       setStatusMessage({ type: 'success', text: 'Kategori berhasil dihapus.' })
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menghapus kategori: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menghapus kategori.') })
     }
   }
 
@@ -232,7 +233,7 @@ export default function HallOfFame({ userRole }) {
       setMyVotes(prev => prev.filter(v => v.kandidat_id !== id))
       setStatusMessage({ type: 'success', text: 'Kandidat berhasil dihapus.' })
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menghapus kandidat: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menghapus kandidat.') })
     }
   }
 

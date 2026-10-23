@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
+import { sanitizeUrl } from '../utils/security'
 
 export default function Dashboard({ onNavigate, userRole, userName, profilePhoto, isWhitelistOpen, setIsWhitelistOpen }) {
   const [randomQuote, setRandomQuote] = useState(null)
@@ -180,7 +182,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
       setIsEditAgendaOpen(false)
     } catch (err) {
-      alert(`Gagal menyimpan agenda: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal menyimpan agenda.'))
     } finally {
       setSavingAgenda(false)
     }
@@ -213,16 +215,73 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
     fetchRandomQuote()
   }, [])
 
-  // Deadlines state & handling
+  const DEADLINE_DRAFT_KEY = 'besiuin_draft_deadline'
+
+  // Deadlines state & handling with draft recovery
   const [deadlines, setDeadlines] = useState([])
   const [loadingDeadlines, setLoadingDeadlines] = useState(true)
   const [submittingDeadline, setSubmittingDeadline] = useState(false)
-  const [newMatkul, setNewMatkul] = useState('')
-  const [newDeskripsi, setNewDeskripsi] = useState('')
-  const [newTanggalDeadline, setNewTanggalDeadline] = useState('')
-  const [newTempatPengumpulan, setNewTempatPengumpulan] = useState('')
-  const [newLinkPengumpulan, setNewLinkPengumpulan] = useState('')
+
+  // Inisialisasi dari draft sessionStorage jika ada
+  const [newMatkul, setNewMatkul] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(DEADLINE_DRAFT_KEY)
+      return saved ? JSON.parse(saved).nama_matkul || '' : ''
+    } catch { return '' }
+  })
+  const [newDeskripsi, setNewDeskripsi] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(DEADLINE_DRAFT_KEY)
+      return saved ? JSON.parse(saved).deskripsi_tugas || '' : ''
+    } catch { return '' }
+  })
+  const [newTanggalDeadline, setNewTanggalDeadline] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(DEADLINE_DRAFT_KEY)
+      return saved ? JSON.parse(saved).tanggal_deadline || '' : ''
+    } catch { return '' }
+  })
+  const [newTempatPengumpulan, setNewTempatPengumpulan] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(DEADLINE_DRAFT_KEY)
+      return saved ? JSON.parse(saved).tempat_pengumpulan || '' : ''
+    } catch { return '' }
+  })
+  const [newLinkPengumpulan, setNewLinkPengumpulan] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(DEADLINE_DRAFT_KEY)
+      return saved ? JSON.parse(saved).link_pengumpulan || '' : ''
+    } catch { return '' }
+  })
   const [, setTick] = useState(0)
+
+  // Auto-save draft ke sessionStorage setiap input berubah
+  useEffect(() => {
+    if (newMatkul || newDeskripsi || newTanggalDeadline || newTempatPengumpulan || newLinkPengumpulan) {
+      try {
+        sessionStorage.setItem(DEADLINE_DRAFT_KEY, JSON.stringify({
+          nama_matkul: newMatkul,
+          deskripsi_tugas: newDeskripsi,
+          tanggal_deadline: newTanggalDeadline,
+          tempat_pengumpulan: newTempatPengumpulan,
+          link_pengumpulan: newLinkPengumpulan,
+        }))
+      } catch {
+        // Abaikan jika storage penuh
+      }
+    }
+  }, [newMatkul, newDeskripsi, newTanggalDeadline, newTempatPengumpulan, newLinkPengumpulan])
+
+  const clearDeadlineDraft = () => {
+    setNewMatkul('')
+    setNewDeskripsi('')
+    setNewTanggalDeadline('')
+    setNewTempatPengumpulan('')
+    setNewLinkPengumpulan('')
+    try {
+      sessionStorage.removeItem(DEADLINE_DRAFT_KEY)
+    } catch {}
+  }
 
   // Edit deadline modal state
   const [isEditDeadlineModalOpen, setIsEditDeadlineModalOpen] = useState(false)
@@ -281,7 +340,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       setWhitelistRole('member')
       await fetchWhitelistUsers()
     } catch (err) {
-      setWhitelistStatus({ type: 'error', text: `Gagal menambahkan: ${err.message}` })
+      setWhitelistStatus({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menambahkan anggota.') })
     }
   }
 
@@ -292,7 +351,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       await fetchWhitelistUsers()
       setWhitelistStatus({ type: 'success', text: `Role berhasil diperbarui menjadi ${newRole}!` })
     } catch (err) {
-      setWhitelistStatus({ type: 'error', text: `Gagal memperbarui role: ${err.message}` })
+      setWhitelistStatus({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal memperbarui role.') })
     }
   }
 
@@ -304,7 +363,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       await fetchWhitelistUsers()
       setWhitelistStatus({ type: 'success', text: `Berhasil menghapus ${name}!` })
     } catch (err) {
-      setWhitelistStatus({ type: 'error', text: `Gagal menghapus: ${err.message}` })
+      setWhitelistStatus({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menghapus anggota.') })
     }
   }
 
@@ -369,7 +428,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         deskripsi_tugas: newDeskripsi.trim(),
         tanggal_deadline: targetUtc,
         tempat_pengumpulan: newTempatPengumpulan.trim() || 'TBA',
-        link_pengumpulan: newLinkPengumpulan.trim() || null
+        link_pengumpulan: sanitizeUrl(newLinkPengumpulan) || null
       }
 
       const { error } = await supabase.from('class_deadlines').insert([newDeadline])
@@ -392,13 +451,9 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         await fetchDeadlines()
       }
 
-      setNewMatkul('')
-      setNewDeskripsi('')
-      setNewTanggalDeadline('')
-      setNewTempatPengumpulan('')
-      setNewLinkPengumpulan('')
+      clearDeadlineDraft()
     } catch (err) {
-      alert(`Gagal membuat deadline: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal membuat deadline.'))
     } finally {
       setSubmittingDeadline(false)
     }
@@ -449,7 +504,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         deskripsi_tugas: editDeskripsi.trim(),
         tanggal_deadline: targetUtc,
         tempat_pengumpulan: editTempatPengumpulan.trim() || 'TBA',
-        link_pengumpulan: editLinkPengumpulan.trim() || null
+        link_pengumpulan: sanitizeUrl(editLinkPengumpulan) || null
       }
 
       const { error } = await supabase.from('class_deadlines').update(updatedData).eq('id', editingDeadlineId)
@@ -475,7 +530,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
       setIsEditDeadlineModalOpen(false)
       setEditingDeadlineId(null)
     } catch (err) {
-      alert(`Gagal memperbarui deadline: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal memperbarui deadline.'))
     } finally {
       setSubmittingEditDeadline(false)
     }
@@ -497,7 +552,7 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
         await fetchDeadlines()
       }
     } catch (err) {
-      alert(`Gagal menghapus deadline: ${err.message}`)
+      alert(getFriendlyErrorMessage(err, 'Gagal menghapus deadline.'))
     }
   }
 
@@ -783,9 +838,9 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {item.link_pengumpulan && (
+                          {sanitizeUrl(item.link_pengumpulan) && (
                             <a 
-                              href={item.link_pengumpulan} 
+                              href={sanitizeUrl(item.link_pengumpulan)} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#161a24] hover:bg-[#1d2330] border border-white/10 text-xs font-mono text-zinc-200 transition-colors"
@@ -837,14 +892,32 @@ export default function Dashboard({ onNavigate, userRole, userName, profilePhoto
 
             {/* Add Task Form */}
             <div className="lg:col-span-5 bg-[#11141c]/90 border border-white/10 rounded-lg p-5">
-              <div className="mb-4 pb-3 border-b border-white/10">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2 font-mono uppercase">
-                  <span className="material-symbols-outlined text-sm text-maroon-600">add_task</span>
-                  Tambah Deadline Baru
-                </h3>
-                <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                  PJ atau anggota kelas dapat mengunggah tugas baru.
-                </p>
+              <div className="mb-4 pb-3 border-b border-white/10 flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2 font-mono uppercase">
+                    <span className="material-symbols-outlined text-sm text-maroon-600">add_task</span>
+                    Tambah Deadline Baru
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                    PJ atau anggota kelas dapat mengunggah tugas baru.
+                  </p>
+                </div>
+                {Boolean(newMatkul || newDeskripsi || newTanggalDeadline || newTempatPengumpulan || newLinkPengumpulan) && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Draft tersimpan
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearDeadlineDraft}
+                      className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+                      title="Kosongkan draft formulir"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                )}
               </div>
 
               <form onSubmit={handleCreateDeadline} className="flex flex-col gap-3">

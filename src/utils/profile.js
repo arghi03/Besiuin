@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabaseClient'
 import { uploadToStorage } from './storage'
+import { getFriendlyErrorMessage } from './errorHandler'
 
 // Profil disimpan di Supabase Storage (foto) + DB (username & foto_url)
 // Semua data tersimpan di server — tidak ada fallback localStorage.
@@ -41,33 +42,25 @@ export async function updateProfileUsername(email, username) {
   const cleanUsername = (username || '').toLowerCase().trim().replace(/\s/g, '')
   if (!cleanUsername) throw new Error('Username tidak boleh kosong.')
 
-  try {
-    const { error } = await supabase.rpc('update_profile', {
-      p_email: emailLower,
-      p_username: cleanUsername,
-    })
+  const { error } = await supabase.rpc('update_profile', {
+    p_email: emailLower,
+    p_username: cleanUsername,
+  })
 
-    if (error) {
-      console.error('updateProfileUsername RPC error:', error)
-      // Kalau RPC tidak ada, coba direct update sebagai fallback
-      const { error: directError } = await supabase
-        .from('whitelist_users')
-        .update({ username: cleanUsername })
-        .eq('email', emailLower)
+  if (error) {
+    console.error('updateProfileUsername RPC error:', error)
+    // Kalau RPC tidak ada, coba direct update sebagai fallback
+    const { error: directError } = await supabase
+      .from('whitelist_users')
+      .update({ username: cleanUsername })
+      .eq('email', emailLower)
 
-      if (directError) {
-        throw new Error(
-          directError.code === '42501'
-            ? 'Gagal menyimpan: hak akses ditolak. Pastikan SQL migration sudah di-run di Supabase.'
-            : (directError.message || 'Gagal menyimpan username.')
-        )
-      }
+    if (directError) {
+      throw new Error(getFriendlyErrorMessage(directError, 'Gagal menyimpan username.'))
     }
-
-    return { ok: true, username: cleanUsername }
-  } catch (err) {
-    throw err
   }
+
+  return { ok: true, username: cleanUsername }
 }
 
 // Simpan foto ke Supabase Storage dan update database via RPC (bypass RLS)
@@ -91,31 +84,23 @@ export async function updateProfilePhoto(email, fotoDataUrl) {
   }
 
   // Update DB via RPC (bypass RLS)
-  try {
-    const { error } = await supabase.rpc('update_profile', {
-      p_email: emailLower,
-      p_foto_url: publicUrl,
-    })
+  const { error } = await supabase.rpc('update_profile', {
+    p_email: emailLower,
+    p_foto_url: publicUrl,
+  })
 
-    if (error) {
-      console.error('updateProfilePhoto RPC error:', error)
-      // Fallback direct update
-      const { error: directError } = await supabase
-        .from('whitelist_users')
-        .update({ foto_url: publicUrl })
-        .eq('email', emailLower)
+  if (error) {
+    console.error('updateProfilePhoto RPC error:', error)
+    // Fallback direct update
+    const { error: directError } = await supabase
+      .from('whitelist_users')
+      .update({ foto_url: publicUrl })
+      .eq('email', emailLower)
 
-      if (directError) {
-        throw new Error(
-          directError.code === '42501'
-            ? 'Gagal menyimpan URL foto: hak akses ditolak. Pastikan SQL migration sudah di-run di Supabase.'
-            : (directError.message || 'Gagal memperbarui foto di database.')
-        )
-      }
+    if (directError) {
+      throw new Error(getFriendlyErrorMessage(directError, 'Gagal memperbarui foto di database.'))
     }
-
-    return { ok: true, url: publicUrl }
-  } catch (err) {
-    throw err
   }
+
+  return { ok: true, url: publicUrl }
 }

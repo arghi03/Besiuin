@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../config/supabaseClient'
 import { compressImage } from '../utils/image'
 import { uploadToStorage } from '../utils/storage'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
 
 export default function GalleryPage({ onBack, userRole }) {
   const [gallery, setGallery] = useState([])
@@ -51,7 +52,7 @@ export default function GalleryPage({ onBack, userRole }) {
         setGallery(galleryData || [])
       }
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal memuat data: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal memuat data galeri.') })
     } finally {
       setLoading(false)
     }
@@ -134,7 +135,7 @@ export default function GalleryPage({ onBack, userRole }) {
       setFotoFileName('')
       setSemester('1')
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menyimpan momen: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menyimpan momen.') })
     } finally {
       setSubmittingGallery(false)
     }
@@ -150,7 +151,7 @@ export default function GalleryPage({ onBack, userRole }) {
       setGallery(prev => prev.filter(g => g.id !== id))
       setStatusMessage({ type: 'success', text: 'Momen berhasil dihapus.' })
     } catch (err) {
-      setStatusMessage({ type: 'error', text: `Gagal menghapus: ${err.message}` })
+      setStatusMessage({ type: 'error', text: getFriendlyErrorMessage(err, 'Gagal menghapus momen.') })
     }
   }
 

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../config/supabaseClient'
+import { escapeLikeWildcards } from '../utils/security'
+import { getFriendlyErrorMessage } from '../utils/errorHandler'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -53,10 +55,11 @@ export default function LoginPage() {
             const usernamePrefix = resolvedUsername
             trimmedEmail = `${usernamePrefix}@mhs.uinjkt.ac.id`
 
+            const sanitizedPrefix = escapeLikeWildcards(usernamePrefix)
             const { data: userByPrefix } = await supabase
               .from('whitelist_users')
               .select('email')
-              .ilike('email', `${usernamePrefix}@%`)
+              .ilike('email', `${sanitizedPrefix}@%`)
               .maybeSingle()
 
             if (userByPrefix?.email) {
@@ -113,10 +116,8 @@ export default function LoginPage() {
           }
         }
       } else if (authMode === 'signup') {
-        // Prevent duplicate registrations
-        const { data: existingUser } = await supabase.auth.admin?.listUsers
-        // Use auth.getUser with the email to check if user already exists (simpler approach: try signUp and catch error)
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        // Sign up with Supabase Auth
+        const { error: signUpError } = await supabase.auth.signUp({
           email: trimmedEmail,
           password: password,
         })
@@ -142,7 +143,7 @@ export default function LoginPage() {
         setAuthSuccess('Akun berhasil dibuat! Silakan verifikasi email kampus Anda untuk mengaktifkan akun.')
       }
     } catch (err) {
-      setAuthError(err.message || 'Terjadi kesalahan tak terduga.')
+      setAuthError(getFriendlyErrorMessage(err, 'Terjadi kesalahan tak terduga.'))
     } finally {
       setLoading(false)
     }
